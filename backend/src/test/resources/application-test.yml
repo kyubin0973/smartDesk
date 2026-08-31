@@ -1,0 +1,21 @@
+spring:
+  datasource:
+    # 로컬 PostgreSQL 의 별도 테스트 DB. (CI 에서는 postgres 서비스 컨테이너 필요)
+    url: ${TEST_DB_URL:jdbc:postgresql://localhost:5432/smartdesk_test}
+    username: ${TEST_DB_USERNAME:smartdesk}
+    password: ${TEST_DB_PASSWORD:smartdesk}
+  jpa:
+    hibernate:
+      ddl-auto: none
+  flyway:
+    enabled: true
+    clean-disabled: false
+
+smartdesk:
+  jwt:
+    secret: c21hcnRkZXNrLWRldi1zZWNyZXQta2V5LWNoYW5nZS1tZS0zMi1ieXRlcw==
+    access-token-ttl-seconds: 3600
+  sla:
+    business-hours-only: false
+  storage:
+    dir: ./var/test-attachments

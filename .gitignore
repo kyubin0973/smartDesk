@@ -1,0 +1,23 @@
+# Java / Maven
+backend/target/
+backend/var/
+*.class
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+
+# Env / logs
+*.env
+*.log
+
+# 산출물 아카이브 (동일 내용의 PDF/XLSX 4개가 루트에 이미 있음)
+울산_2반_김규빈_산출물.zip
