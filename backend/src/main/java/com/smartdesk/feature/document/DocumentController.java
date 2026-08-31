@@ -85,6 +85,10 @@ public class DocumentController {
         AuthPrincipal p = CurrentUser.get();
         Document d = documents.findById(documentId).orElseThrow(() -> ApiException.notFound("문서"));
         if (!canRead(p, d)) throw ApiException.forbidden("열람 권한이 없는 문서입니다.");
+        // 0.5-e: 고객사 담당자의 공유 문서 열람만 감사 (SI 는 노이즈)
+        if (p.isClientUser()) {
+            audit.record("DOCUMENT_VIEWED", "DOCUMENT", documentId, d.getTitle());
+        }
         return toDetail(d);
     }
 

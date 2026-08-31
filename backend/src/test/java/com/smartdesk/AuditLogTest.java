@@ -79,6 +79,18 @@ class AuditLogTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void documentView_byClientUser_isAudited_notForSi() throws Exception {
+        long before = audit("?action=DOCUMENT_VIEWED").get("totalElements").asLong();
+        // 문서 2 = CLIENT_SHARED → client 1
+        mvc.perform(get("/api/documents/2").header("Authorization", "Bearer " + clientAToken))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/documents/2").header("Authorization", "Bearer " + siToken))
+                .andExpect(status().isOk());
+        assertEquals(before + 1, audit("?action=DOCUMENT_VIEWED").get("totalElements").asLong(),
+                "고객사 담당자 열람만 감사 (SI 는 제외)");
+    }
+
+    @Test
     void badDate_is400() throws Exception {
         mvc.perform(get("/api/audit?from=not-a-date").header("Authorization", "Bearer " + siToken))
                 .andExpect(status().isBadRequest());

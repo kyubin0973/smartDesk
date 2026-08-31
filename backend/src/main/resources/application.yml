@@ -57,6 +57,16 @@ smartdesk:
     reset-ttl-minutes: 30
     min-length: 8
     expose-reset-token: true      # dev 편의: 응답에 devResetToken 포함. prod 프로파일에서 false
+  mail:
+    from: ${MAIL_FROM:no-reply@smartdesk.io}
+  notifications:
+    # 이 유형은 인앱 + 이메일. spring.mail.host 미설정 시 이메일은 로그로만.
+    email-types: SLA_BREACHED,SLA_DUE_SOON,TICKET_ASSIGNED
+    slack-types: SLA_BREACHED
+    slack-webhook-url: ${SLACK_WEBHOOK_URL:}
+
+# 이메일 발송하려면 아래를 설정 (미설정 시 로그 어댑터):
+# spring.mail.host / port / username / password / properties.mail.smtp.auth 등
   storage:
     dir: ${ATTACHMENT_DIR:./var/attachments}
 

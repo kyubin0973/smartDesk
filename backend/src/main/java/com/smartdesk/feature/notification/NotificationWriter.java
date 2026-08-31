@@ -21,13 +21,14 @@ class NotificationWriter {
         this.repo = repo;
     }
 
+    /** @return 실제로 저장했으면 true, 중복이라 건너뛰었으면 false */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    void persist(String recipientType, Long recipientId, NotificationType type,
-                 String title, String body, Long ticketId) {
+    boolean persist(String recipientType, Long recipientId, NotificationType type,
+                    String title, String body, Long ticketId) {
         if ((type == NotificationType.SLA_DUE_SOON || type == NotificationType.SLA_BREACHED)
                 && ticketId != null
                 && repo.existsByRecipientTypeAndRecipientIdAndTypeAndTicketId(recipientType, recipientId, type, ticketId)) {
-            return;
+            return false;
         }
         Notification n = new Notification();
         n.setRecipientType(recipientType);
@@ -37,5 +38,6 @@ class NotificationWriter {
         n.setBody(body);
         n.setTicketId(ticketId);
         repo.save(n); // 동시성 중복 시 DataIntegrityViolationException → 이 트랜잭션만 롤백
+        return true;
     }
 }

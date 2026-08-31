@@ -8,10 +8,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.UnexpectedRollbackException;
 
 /**
- * 알림 생성 + 발송. 현재는 인앱 저장 + 로그.
- * 저장은 NotificationWriter 의 REQUIRES_NEW 트랜잭션에서 수행하고,
- * 동시성 중복 예외는 여기(경계 밖)에서 삼킨다 → 호출자 트랜잭션 안전.
- * 확장: 이메일/슬랙 어댑터를 여기에 추가.
+ * 알림 생성 + 발송.
+ * - 인앱: NotificationWriter 의 REQUIRES_NEW 트랜잭션 (중복 예외는 여기서 삼킴)
+ * - 외부 채널(이메일/슬랙): 인앱 저장 성공 시 NotificationChannels 로 팬아웃 (0.5-a)
  */
 @Service
 public class NotificationService {
@@ -19,9 +18,11 @@ public class NotificationService {
     private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
 
     private final NotificationWriter writer;
+    private final NotificationChannels channels;
 
-    public NotificationService(NotificationWriter writer) {
+    public NotificationService(NotificationWriter writer, NotificationChannels channels) {
         this.writer = writer;
+        this.channels = channels;
     }
 
     public void notifyUser(Long userId, NotificationType type, String title, String body, Long ticketId) {
@@ -35,12 +36,15 @@ public class NotificationService {
     private void create(String recipientType, Long recipientId, NotificationType type,
                         String title, String body, Long ticketId) {
         if (recipientId == null) return;
+        boolean persisted = false;
         try {
-            writer.persist(recipientType, recipientId, type, title, body, ticketId);
+            persisted = writer.persist(recipientType, recipientId, type, title, body, ticketId);
             log.info("[notify] {}#{} <- {} : {}", recipientType, recipientId, type, title);
-            // TODO(확장): 이메일/슬랙 발송 어댑터 호출
         } catch (DataIntegrityViolationException | UnexpectedRollbackException dup) {
             // 동시성으로 인한 중복 삽입 — 무시 (REQUIRES_NEW 트랜잭션만 롤백됨)
+        }
+        if (persisted) {
+            channels.fanOut(recipientType, recipientId, type, title, body, ticketId);
         }
     }
 }
