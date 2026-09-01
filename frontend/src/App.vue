@@ -22,7 +22,12 @@ const nav = computed(() => {
     { to: '/', label: '대시보드', ico: '📊' },
     { to: '/clients', label: '고객사 관리', ico: '🏢' },
     { to: '/docs', label: '지식문서', ico: '📚' },
-    ...(auth.isManager ? [{ to: '/audit', label: '감사 로그', ico: '🔎' }] : []),
+    ...(auth.isManager
+      ? [
+          { to: '/reports/sla', label: 'SLA 리포트', ico: '📈' },
+          { to: '/audit', label: '감사 로그', ico: '🔎' },
+        ]
+      : []),
     { to: '/profile', label: '설정', ico: '⚙️' },
   ]
 })

@@ -82,6 +82,7 @@ npm run dev
 | (문서 상세 — 고객사 열람) | `/docs/:id` | `views/DocDetailView.vue` |
 | SCR-PROFILE-001 | `/profile` | `views/ProfileView.vue` |
 | (비밀번호 재설정) | `/forgot-password`, `/reset-password` | `views/ForgotPasswordView.vue`, `ResetPasswordView.vue` |
+| (SLA 준수율 리포트 — 관리자) | `/reports/sla` | `views/SlaReportView.vue` |
 | (감사 로그 — 관리자) | `/audit` | `views/AuditLogView.vue` |
 
 ### API (API 명세서) — **모든 경로에 `/api` 프리픽스 추가**
@@ -107,7 +108,10 @@ npm run dev
 | `GET/POST/GET/DELETE /api/attachments` | 티켓/문서 첨부파일 (로컬 디스크) |
 | `GET /api/tickets/{id}/related-documents` | 동일 카테고리 지식문서 (RAG 규칙 기반 전신) |
 | `PUT /api/tickets/{id}/priority` | 우선순위 수동 조정 |
-| `GET /api/audit`, `/api/audit/ticket-events` | 감사 로그 조회 (관리자, REQ-F-014) |
+| `GET /api/audit`, `/api/audit/ticket-events` (+ `/export`) | 감사 로그 조회·CSV (관리자, REQ-F-014) |
+| `GET /api/auth/sessions`, `DELETE /api/auth/sessions/{id}`, `DELETE /api/auth/sessions` | 로그인 세션 목록·개별/전체 종료 (0.5-g) |
+| `GET /api/notifications/stream` | 실시간 알림 SSE (0.5-b) |
+| `GET /api/reports/sla` (+ `/export`) | SLA 준수율 리포트 (관리자, 0.5-d) |
 
 ### 데이터 (ERD)
 `backend/src/main/resources/db/migration/V1__init.sql` 가 ERD 테이블 정의서를 그대로 반영.
@@ -131,7 +135,7 @@ npm run dev
 | 7 | 카테고리 자동분류(REQ-F-009) 알고리즘 미정 | 키워드 규칙 기반 제안 (8장: ML 은 2차). 등록 시 자동 저장, SI 확정/수정 | `CategorySuggestionService` |
 | 8 | 담당자 자동배정(REQ-F-010) 규칙 미정 | `category_routing` + `user_client` 기준, 열린 티켓 최소 담당자 | `AssignmentService` |
 | 9 | SLA 계산식 미정 | 기본 `sla_due_at = created_at + sla_resolution_min` (24h). `business-hours-only=true` 시 **영업시간만 카운트** (평일 09-18 Asia/Seoul, 설정 가능) | `SlaService` |
-| 10 | SLA 초과 알림 수단 미정 | **`SlaMonitorJob`(5분) → `SlaMonitorService`** — 티켓 단위 처리(1건 실패가 전체 재알림 유발 안 함). **미배정 티켓 초과 시 부서 관리자→전체 관리자로 에스컬레이션.** 알림 저장은 `NotificationWriter`의 REQUIRES_NEW 트랜잭션 + 유니크로 중복 방지. 메일/슬랙 어댑터는 TODO | `feature/ticket/SlaMonitorService`, `feature/notification/NotificationWriter` |
+| 10 | SLA 초과 알림 수단 미정 | **`SlaMonitorJob`(5분) → `SlaMonitorService`** — 티켓 단위 처리(1건 실패가 전체 재알림 유발 안 함). **초과 경과 시간별 다단계 에스컬레이션**(L1 담당자 → L2 부서관리자 → L3 전체관리자, 0.5-h). 알림 저장은 `NotificationWriter`의 REQUIRES_NEW 트랜잭션 + 유니크로 중복 방지. 이메일(SMTP)·Slack 채널 어댑터는 유형별 설정(0.5-a) | `feature/ticket/SlaMonitorService`, `feature/notification/NotificationChannels` |
 | 11 | 문서 버전 이력 테이블 없음 | `document_version` 스냅샷 + `GET /api/documents/{id}/versions` | `document_version` |
 | 12 | REQ-E-008 낙관적 잠금 version 파라미터 없음 | `PUT /documents/{id}` 바디 `expectedVersion`, 불일치 409 | `DocumentController.update` |
 | 13 | 문서 다중 고객사 공유 모델 없음 | `document_share` 조인 테이블 | `document_share` |
@@ -157,6 +161,7 @@ npm run dev
 | 33 | 감사 로그 조회 화면 없음 (REQ-F-014) | **`audit_log` 테이블**(V5) — 로그인 성공·실패, 로그아웃, 비밀번호 재설정·변경, SI/고객사 계정 생성·비활성화, 계약 오프보딩, 문서 공개범위 변경. 인증 이벤트는 `REQUIRES_NEW` 로 **실패한 요청도 기록**. `/audit` 화면(관리자): "보안·관리" + "티켓 이벤트"(ticket_event) 탭, 액션·행위자·기간 필터 | `feature/audit/AuditService`, `AuditController`, `views/AuditLogView.vue` |
 | 34 | 문서 본문이 평문 `textarea` (SCR-DOC-002 "리치텍스트") | TipTap 에디터(`RichTextEditor.vue`, 서식·제목·목록·인용·코드·링크). 저장 시 서버 `HtmlSanitizer`(OWASP java-html-sanitizer) 로 허용 태그만 남김 — script·on\*·`javascript:` 제거. `DocDetailView` 는 sanitize 된 HTML 을 렌더 | `components/RichTextEditor.vue`, `common/HtmlSanitizer.java` |
 | 35 | 알림이 30초 폴링 (지연·부하) | `GET /api/notifications/stream` SSE — 새 알림 시 `notification` 이벤트로 즉시 신호, 프런트가 목록 재조회. EventSource 대신 fetch 스트리밍(Authorization 헤더)+지수 백오프 재연결. 폴링은 120초 백스톱으로 축소 | `feature/notification/SseHub.java`, `api/notificationStream.js` |
+| 36 | 리포트·감사 데이터 내보내기 없음 | 감사 로그·티켓 이벤트 `?...&` 필터 그대로 `GET /api/audit/export`·`/api/audit/ticket-events/export` CSV(UTF-8 BOM). `GET /api/reports/sla` SLA 준수율(전체·고객사별·카테고리별) + `/reports/sla/export`, `/reports/sla` 화면(관리자) | `feature/report/ReportController`, `common/Csv.java`, `views/SlaReportView.vue` |
 
 ### 구현한 예외 처리 (요구사항 5장)
 - REQ-E-001 계약 만료 후에도 기존 열린 티켓 상태 변경 허용 (`updateStatus` 는 계약 검사 안 함)
@@ -196,7 +201,7 @@ TEST_DB_URL=jdbc:postgresql://localhost:5432/smartdesk_test TEST_DB_DRIVER=org.p
   TEST_DB_USERNAME=smartdesk TEST_DB_PASSWORD=smartdesk \
   JAVA_HOME=$(/usr/libexec/java_home -v 21) mvn test
 ```
-총 81개.
+총 87개.
 
 | 테스트 | 검증 |
 |---|---|

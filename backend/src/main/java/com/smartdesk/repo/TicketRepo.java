@@ -27,6 +27,11 @@ public interface TicketRepo extends JpaRepository<Ticket, Long> {
 
     List<Ticket> findByClientId(Long clientId);
     List<Ticket> findByClientIdAndStatusIn(Long clientId, List<Enums.TicketStatus> statuses);
+
+    /** 0.5-d 리포트: 상태 + 생성일 구간으로 (전체 고객사). */
+    @Query("select t from Ticket t where t.status in :statuses and t.createdAt >= :from and t.createdAt < :to")
+    List<Ticket> findByStatusInAndCreatedAtRange(@Param("statuses") List<Enums.TicketStatus> statuses,
+                                                 @Param("from") Instant from, @Param("to") Instant to);
     List<Ticket> findByAssigneeIdAndStatusIn(Long assigneeId, List<Enums.TicketStatus> statuses);
     long countByClientIdAndStatus(Long clientId, Enums.TicketStatus status);
     long countByClientId(Long clientId);

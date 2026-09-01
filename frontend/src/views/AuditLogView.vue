@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api/http'
+import { downloadFile } from '../api/download'
 import { dateTime } from '../labels'
 
 const router = useRouter()
@@ -62,6 +63,22 @@ async function load(page = 0) {
   }
 }
 
+async function exportCsv() {
+  error.value = ''
+  try {
+    const base = tab.value === 'security' ? '/audit/export' : '/audit/ticket-events/export'
+    const params =
+      tab.value === 'security'
+        ? { action: filters.value.action, actorEmail: filters.value.actorEmail }
+        : { type: filters.value.type }
+    params.from = toInstant(filters.value.from)
+    params.to = toInstant(filters.value.to)
+    await downloadFile(base, { params })
+  } catch (e) {
+    error.value = e.message
+  }
+}
+
 function switchTab(t) {
   tab.value = t
   filters.value = { action: '', actorEmail: '', type: '', from: '', to: '' }
@@ -113,6 +130,7 @@ onMounted(() => load(0))
         <label>종료일</label><input v-model="filters.to" type="date" />
       </div>
       <button class="sm" @click="load(0)">조회</button>
+      <button class="secondary sm" @click="exportCsv">CSV 내보내기</button>
     </div>
   </div>
 

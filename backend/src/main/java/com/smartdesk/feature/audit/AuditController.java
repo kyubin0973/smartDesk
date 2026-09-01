@@ -8,12 +8,20 @@ import com.smartdesk.domain.ClientUser;
 import com.smartdesk.domain.Enums.TicketEventType;
 import com.smartdesk.domain.TicketEvent;
 import com.smartdesk.repo.*;
+import com.smartdesk.common.Csv;
 import com.smartdesk.security.CurrentUser;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /** C11: 감사 로그 조회 (관리자 전용, REQ-F-014 컴플라이언스). */
@@ -97,6 +105,54 @@ public class AuditController {
                     titles.getOrDefault(e.getTicketId(), "#" + e.getTicketId()),
                     e.getType().name(), e.getFromValue(), e.getToValue(), actor);
         }));
+    }
+
+    private static final int EXPORT_CAP = 10000;
+    private static final DateTimeFormatter TS =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(java.time.ZoneOffset.UTC);
+
+    /** 0.5-d: 보안·관리 감사 로그 CSV 내보내기 (필터 동일, 최대 1만 행). */
+    @GetMapping("/export")
+    public ResponseEntity<byte[]> exportAudit(@RequestParam(required = false) String action,
+                                              @RequestParam(required = false) String actorEmail,
+                                              @RequestParam(required = false) String from,
+                                              @RequestParam(required = false) String to) {
+        var rows = list(action, actorEmail, from, to, 0, EXPORT_CAP).content();
+        List<List<Object>> body = new ArrayList<>();
+        for (AuditRow r : rows) {
+            body.add(List.<Object>of(TS.format(r.at()), nz(r.actorType()), nz(r.actorEmail()), nz(r.action()),
+                    nz(r.targetType()), r.targetId() == null ? "" : r.targetId(), nz(r.detail()), nz(r.ip())));
+        }
+        String csv = Csv.of(List.of("일시(UTC)", "행위자유형", "행위자", "액션", "대상유형", "대상ID", "상세", "IP"), body);
+        return csvResponse(csv, "audit-log");
+    }
+
+    /** 0.5-d: 티켓 이벤트 CSV 내보내기. */
+    @GetMapping("/ticket-events/export")
+    public ResponseEntity<byte[]> exportTicketEvents(@RequestParam(required = false) String type,
+                                                     @RequestParam(required = false) Long ticketId,
+                                                     @RequestParam(required = false) String from,
+                                                     @RequestParam(required = false) String to) {
+        var rows = ticketEventList(type, ticketId, from, to, 0, EXPORT_CAP).content();
+        List<List<Object>> body = new ArrayList<>();
+        for (TicketEventRow r : rows) {
+            body.add(List.<Object>of(TS.format(r.at()), r.ticketId(), nz(r.ticketTitle()), nz(r.type()),
+                    nz(r.fromValue()), nz(r.toValue()), nz(r.actor())));
+        }
+        String csv = Csv.of(List.of("일시(UTC)", "티켓ID", "제목", "이벤트", "이전값", "이후값", "행위자"), body);
+        return csvResponse(csv, "ticket-events");
+    }
+
+    private static String nz(String s) {
+        return s == null ? "" : s;
+    }
+
+    private ResponseEntity<byte[]> csvResponse(String csv, String name) {
+        String filename = name + "-" + TS.format(Instant.now()).replace(":", "").replace(" ", "_") + ".csv";
+        return ResponseEntity.ok()
+                .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .body(csv.getBytes(StandardCharsets.UTF_8));
     }
 
     private Instant fromOr(String s, Instant fallback) {

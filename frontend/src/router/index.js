@@ -82,6 +82,12 @@ const routes = [
     component: () => import('../views/AuditLogView.vue'),
     meta: { si: true, manager: true },
   },
+  {
+    path: '/reports/sla',
+    name: 'sla-report',
+    component: () => import('../views/SlaReportView.vue'),
+    meta: { si: true, manager: true },
+  },
 
   // 고객사 담당자
   {
