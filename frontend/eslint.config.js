@@ -30,6 +30,8 @@ export default [
     },
     rules: {
       'vue/multi-word-component-names': 'off',
+      // 문서 본문은 서버(HtmlSanitizer)에서 허용 태그만 남기고 sanitize 후 저장 → DocDetailView 에서 v-html 렌더
+      'vue/no-v-html': 'off',
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_', caughtErrors: 'none' }],
       'no-empty': ['warn', { allowEmptyCatch: true }],
     },

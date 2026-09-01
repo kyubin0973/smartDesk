@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api/http'
 import AttachmentSection from '../components/AttachmentSection.vue'
+import RichTextEditor from '../components/RichTextEditor.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -57,7 +58,8 @@ async function save() {
   <div class="card" style="max-width: 760px">
     <div class="field"><label>제목</label><input v-model="form.title" /></div>
     <div class="field">
-      <label>본문</label><textarea v-model="form.content" rows="12"></textarea>
+      <label>본문</label>
+      <RichTextEditor v-model="form.content" />
     </div>
 
     <div class="grid cols-2">

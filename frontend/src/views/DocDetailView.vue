@@ -39,9 +39,8 @@ onMounted(async () => {
     </div>
     <p v-if="error" class="error">{{ error }}</p>
 
-    <div class="card" style="max-width: 760px">
-      <p style="white-space: pre-wrap; color: var(--ink); margin: 0">{{ doc.content }}</p>
-    </div>
+    <!-- 본문 HTML 은 서버에서 허용 태그만 남기고 sanitize 됨 (HtmlSanitizer.java) -->
+    <div class="card doc-content" style="max-width: 760px" v-html="doc.content" />
 
     <AttachmentSection
       owner-type="DOCUMENT"

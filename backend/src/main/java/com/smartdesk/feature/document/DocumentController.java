@@ -28,15 +28,18 @@ public class DocumentController {
     private final DocumentShareRepo shares;
     private final CategoryRepo categories;
     private final com.smartdesk.feature.audit.AuditService audit;
+    private final com.smartdesk.common.HtmlSanitizer htmlSanitizer;
 
     public DocumentController(DocumentRepo documents, DocumentVersionRepo versions,
                               DocumentShareRepo shares, CategoryRepo categories,
-                              com.smartdesk.feature.audit.AuditService audit) {
+                              com.smartdesk.feature.audit.AuditService audit,
+                              com.smartdesk.common.HtmlSanitizer htmlSanitizer) {
         this.documents = documents;
         this.versions = versions;
         this.shares = shares;
         this.categories = categories;
         this.audit = audit;
+        this.htmlSanitizer = htmlSanitizer;
     }
 
     public record DocRow(Long id, String title, int version, String scope, String categoryName,
@@ -111,7 +114,7 @@ public class DocumentController {
         Document d = new Document();
         d.setCreatedBy(p.id());
         d.setTitle(req.title().trim());
-        d.setContent(req.content());
+        d.setContent(htmlSanitizer.clean(req.content()));
         d.setCategoryId(req.categoryId());
         d.setScope(parseScope(req.scope()));
         d.setVersion(1);
@@ -135,7 +138,7 @@ public class DocumentController {
                     "다른 사용자가 먼저 수정했습니다. 최신 버전(v" + d.getVersion() + ")을 다시 불러오세요.");
         }
         d.setTitle(req.title().trim());
-        d.setContent(req.content());
+        d.setContent(htmlSanitizer.clean(req.content()));
         if (req.categoryId() != null) d.setCategoryId(req.categoryId());
         if (req.scope() != null) {
             d.setScope(parseScope(req.scope()));

@@ -35,8 +35,8 @@
 | g | **세션 관리 화면** — "내 로그인 세션" 목록 + 개별/전체 로그아웃 (`refresh_token` 활용) | ✅ `/auth/sessions`, `SessionsCard` | 보안, 이미 데이터는 있음 |
 | h | **SLA 다단계 에스컬레이션** — 초과 시간별 L1 담당자 → L2 부서관리자 → L3 전체관리자 | ✅ `escalation-l2/l3-minutes` | 현재 담당자→관리자 1단계 |
 | f | **Testcontainers** — `jdbc:tc:` URL 로 PostgreSQL 17 컨테이너 자동 기동, CI 에서 postgres 서비스 제거 | ✅ TC 1.21.4 | 개발 편의, CI 안정성 |
-| c | **리치텍스트 에디터** — 문서 본문 `textarea` → TipTap/Toast UI (HTML 저장, 서버 sanitize) | 다음 | 화면설계서 SCR-DOC-002 "리치텍스트 입력" |
-| b | **실시간 알림** — 폴링(30초) → SSE `/api/notifications/stream` | 대기 | UX, 서버 부하 |
+| c | **리치텍스트 에디터** — 문서 본문 `textarea` → TipTap. 저장 시 서버 `HtmlSanitizer`(OWASP) 로 허용 태그만 | ✅ `RichTextEditor.vue` | 화면설계서 SCR-DOC-002 "리치텍스트 입력" |
+| b | **실시간 알림** — 폴링(30초) → SSE `/api/notifications/stream` | 다음 | UX, 서버 부하 |
 | d | **감사 리포트 내보내기** — `/audit` CSV/PDF export, SLA 준수율 리포트 화면 | 대기 | REQ 리포트 대분류, 감사 대응 |
 
 ---

@@ -155,6 +155,7 @@ npm run dev
 | 31 | 비밀번호 재설정 플로우 없음 | `POST /api/auth/forgot-password` (계정 존재 노출 안 함) → 이메일 토큰(SHA-256 해시 저장, 30분, 이전 토큰 무효화) → `POST /api/auth/reset-password`. 재설정·변경 시 해당 계정 리프레시 토큰 전부 폐기. `POST /api/auth/change-password` (로그인 상태). 메일은 `EmailSender` 인터페이스(현재 로그) | `feature/auth/PasswordService`, `password_reset_token`(V4) |
 | 32 | 문서 첨부 UI 없음 (백엔드만 존재) | `DocEditView` 에 첨부 섹션(SI 업/삭제), 고객사 열람용 `DocDetailView`(읽기전용). 문서 첨부는 **공유받은 고객사만 다운로드**, 업로드/삭제는 SI 만 | `components/AttachmentSection.vue`, `AttachmentController.assertCanAccess` |
 | 33 | 감사 로그 조회 화면 없음 (REQ-F-014) | **`audit_log` 테이블**(V5) — 로그인 성공·실패, 로그아웃, 비밀번호 재설정·변경, SI/고객사 계정 생성·비활성화, 계약 오프보딩, 문서 공개범위 변경. 인증 이벤트는 `REQUIRES_NEW` 로 **실패한 요청도 기록**. `/audit` 화면(관리자): "보안·관리" + "티켓 이벤트"(ticket_event) 탭, 액션·행위자·기간 필터 | `feature/audit/AuditService`, `AuditController`, `views/AuditLogView.vue` |
+| 34 | 문서 본문이 평문 `textarea` (SCR-DOC-002 "리치텍스트") | TipTap 에디터(`RichTextEditor.vue`, 서식·제목·목록·인용·코드·링크). 저장 시 서버 `HtmlSanitizer`(OWASP java-html-sanitizer) 로 허용 태그만 남김 — script·on\*·`javascript:` 제거. `DocDetailView` 는 sanitize 된 HTML 을 렌더 | `components/RichTextEditor.vue`, `common/HtmlSanitizer.java` |
 
 ### 구현한 예외 처리 (요구사항 5장)
 - REQ-E-001 계약 만료 후에도 기존 열린 티켓 상태 변경 허용 (`updateStatus` 는 계약 검사 안 함)
@@ -194,7 +195,7 @@ TEST_DB_URL=jdbc:postgresql://localhost:5432/smartdesk_test TEST_DB_DRIVER=org.p
   TEST_DB_USERNAME=smartdesk TEST_DB_PASSWORD=smartdesk \
   JAVA_HOME=$(/usr/libexec/java_home -v 21) mvn test
 ```
-총 75개.
+총 81개.
 
 | 테스트 | 검증 |
 |---|---|

@@ -519,3 +519,48 @@ tr.clickable:hover {
   border-radius: 7px;
   background: linear-gradient(135deg, #6366f1, #a855f7);
 }
+
+/* 문서 상세 — 서버에서 sanitize 된 본문 HTML 렌더 (0.5-c 리치텍스트) */
+.doc-content {
+  color: var(--ink);
+  line-height: 1.65;
+}
+.doc-content > * + * {
+  margin-top: 0.7em;
+}
+.doc-content h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.doc-content h3 {
+  font-size: 1.12rem;
+  font-weight: 700;
+}
+.doc-content ul,
+.doc-content ol {
+  padding-left: 1.5em;
+}
+.doc-content li + li {
+  margin-top: 0.2em;
+}
+.doc-content a {
+  color: var(--brand);
+  text-decoration: underline;
+}
+.doc-content blockquote {
+  border-left: 3px solid var(--border-strong);
+  padding-left: 14px;
+  color: var(--ink-2);
+}
+.doc-content pre {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-size: 0.9em;
+}
+.doc-content code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
