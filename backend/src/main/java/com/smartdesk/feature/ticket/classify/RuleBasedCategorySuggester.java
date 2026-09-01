@@ -1,8 +1,8 @@
-package com.smartdesk.feature.ticket;
+package com.smartdesk.feature.ticket.classify;
 
 import com.smartdesk.domain.Category;
 import com.smartdesk.repo.CategoryRepo;
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -10,14 +10,11 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * REQ-F-009: 카테고리 자동분류(제안).
- * 1차 구현은 키워드 규칙 기반 (요구사항 8장: ML 모델은 2차 확장).
+ * 키워드 규칙 기반 분류 (요구사항 8장 1차 구현).
  * 제목+내용에서 카테고리별 키워드 매칭 수가 가장 많은 카테고리를 제안.
  */
-@Service
-public class CategorySuggestionService {
-
-    private final CategoryRepo categories;
+@Component
+public class RuleBasedCategorySuggester implements CategorySuggester {
 
     private static final Map<String, List<String>> KEYWORDS = new LinkedHashMap<>();
     static {
@@ -28,13 +25,16 @@ public class CategorySuggestionService {
         KEYWORDS.put("Application", List.of("오류", "에러", "배치", "버그", "500", "npe", "exception", "화면", "기능", "application", "배포"));
     }
 
-    public CategorySuggestionService(CategoryRepo categories) {
+    private final CategoryRepo categories;
+
+    public RuleBasedCategorySuggester(CategoryRepo categories) {
         this.categories = categories;
     }
 
-    /** @return 제안 카테고리 id, 매칭 실패 시 null. */
+    @Override
     public Long suggest(String title, String content) {
-        String text = ((title == null ? "" : title) + " " + (content == null ? "" : content)).toLowerCase(Locale.ROOT);
+        String text = ((title == null ? "" : title) + " " + (content == null ? "" : content))
+                .toLowerCase(Locale.ROOT);
         String best = null;
         int bestScore = 0;
         for (var e : KEYWORDS.entrySet()) {
@@ -43,7 +43,6 @@ public class CategorySuggestionService {
             if (score > bestScore) { bestScore = score; best = e.getKey(); }
         }
         if (best == null) return null;
-        final String match = best;
-        return categories.findByNameIgnoreCase(match).map(Category::getId).orElse(null);
+        return categories.findByNameIgnoreCase(best).map(Category::getId).orElse(null);
     }
 }

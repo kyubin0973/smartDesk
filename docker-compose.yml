@@ -42,6 +42,16 @@ services:
     ports:
       - "5173:80"
 
+  # 단계 1: 티켓 분류 서빙. docker compose --profile ml up --build ml
+  # (빌드 중 데이터셋 다운로드 + 모델 학습). backend 는 CLASSIFICATION_PROVIDER=ml 로 연동.
+  ml:
+    profiles: ["ml", "app"]
+    build:
+      context: ./analytics
+      dockerfile: service/Dockerfile
+    ports:
+      - "8000:8000"
+
 volumes:
   smartdesk_pg:
   smartdesk_attachments:

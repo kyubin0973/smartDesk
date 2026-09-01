@@ -72,6 +72,22 @@ smartdesk:
 # spring.mail.host / port / username / password / properties.mail.smtp.auth 등
   storage:
     dir: ${ATTACHMENT_DIR:./var/attachments}
+  classification:
+    # 단계 1.3: rule | ml. ml 은 analytics/service(FastAPI) 호출, 실패·저신뢰 시 rule 로 폴백.
+    provider: ${CLASSIFICATION_PROVIDER:rule}
+    ml-url: ${CLASSIFICATION_ML_URL:http://localhost:8000}
+    ml-min-confidence: 0.55
+    ml-timeout-ms: 800
+    # ML 모델(HF 데이터셋 학습) queue 라벨 → SmartDesk 카테고리명. 없는 라벨은 규칙 기반 폴백.
+    # 운영에서는 자체 티켓 라벨로 재학습하면 이 매핑이 불필요.
+    queue-map:
+      "[IT Support]": Access
+      "[Technical Support]": Application
+      "[Product Support]": Application
+      "[Service Outages and Maintenance]": Application
+      "[Billing and Payments]": Purchase
+      "[Sales and Pre-Sales]": Purchase
+      "[Returns and Exchanges]": Purchase
 
 logging:
   level:

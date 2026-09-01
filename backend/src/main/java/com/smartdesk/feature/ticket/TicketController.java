@@ -39,7 +39,7 @@ public class TicketController {
     private final DocumentRepo documents;
     private final DocumentShareRepo documentShares;
     private final SlaService sla;
-    private final CategorySuggestionService suggestion;
+    private final com.smartdesk.feature.ticket.classify.CategorySuggester suggestion;
     private final AssignmentService assignment;
     private final PriorityRules priorityRules;
     private final TicketEventService eventLog;
@@ -48,7 +48,7 @@ public class TicketController {
     public TicketController(TicketRepo tickets, ContractRepo contracts, CommentRepo comments,
                             TicketHistoryRepo histories, CategoryRepo categories, SystemAssetRepo systems,
                             AppUserRepo users, ClientUserRepo clientUsers, DocumentRepo documents,
-                            DocumentShareRepo documentShares, SlaService sla, CategorySuggestionService suggestion,
+                            DocumentShareRepo documentShares, SlaService sla, com.smartdesk.feature.ticket.classify.CategorySuggester suggestion,
                             AssignmentService assignment, PriorityRules priorityRules,
                             TicketEventService eventLog, NotificationService notifications) {
         this.tickets = tickets;

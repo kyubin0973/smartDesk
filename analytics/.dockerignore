@@ -1,0 +1,8 @@
+.venv/
+data/
+reports/
+model/artifacts/
+__pycache__/
+.pytest_cache/
+*.pyc
+tests/
