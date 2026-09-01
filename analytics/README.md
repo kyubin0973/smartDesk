@@ -22,7 +22,8 @@ type(Incident/Request/Problem/Change), queue(10종), priority(low/medium/high), 
 | `smartdesk_analytics/rule_baseline.py` | 백엔드 `CategorySuggestionService` 와 같은 방식의 키워드 규칙 베이스라인 |
 | `smartdesk_analytics/model/train.py` | TF-IDF(word+char) + LinearSVC/LogReg 학습·평가 → `model/artifacts/`, `reports/model.md` |
 | `smartdesk_analytics/model/predict.py` | 아티팩트 로드·예측 |
-| `service/app.py` | FastAPI: `POST /classify`, `GET /health` |
+| `smartdesk_analytics/embedding.py` | 문장 임베딩 (multilingual-e5-small, 384차원) — 단계 2 RAG |
+| `service/app.py` | FastAPI: `POST /classify` (단계 1.3), `POST /embed` (단계 2.1), `GET /health` |
 
 ## 실행
 
@@ -53,6 +54,11 @@ Support`↔`Customer Service` 는 의미 중첩으로 recall 이 낮다 → 단�
 
 ## 백엔드 연동
 
-`smartdesk.classification.provider=ml` 이고 서비스가 헬시하면 백엔드가 `POST /classify` 를
-호출해 카테고리를 제안한다. 신뢰도가 `smartdesk.classification.ml-min-confidence` 미만이거나
-서비스 오류면 규칙 기반(`RuleBasedCategorySuggester`)으로 폴백한다.
+**분류 (단계 1.3):** `smartdesk.classification.provider=ml` 이고 서비스가 헬시하면 백엔드가
+`POST /classify` 를 호출해 카테고리를 제안한다. 신뢰도가 `ml-min-confidence` 미만이거나 서비스
+오류면 규칙 기반(`RuleBasedCategorySuggester`)으로 폴백한다.
+
+**RAG (단계 2):** `smartdesk.rag.enabled=true` 면 백엔드가 지식문서·종료 티켓을 청킹해 `POST /embed`
+로 임베딩하고 pgvector `embedding` 테이블에 저장한다. `POST /api/ai/tickets/{id}/related` 가
+벡터 + BM25 하이브리드로 유사 문서·티켓을 반환하고, `/answer-draft` 가 그 문서들을 컨텍스트로
+LLM 초안을 만든다 (`RAG_LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY`; 미설정 시 근거 문서만).

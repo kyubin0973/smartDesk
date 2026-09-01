@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:16
+    image: pgvector/pgvector:pg16   # 단계 2: pgvector 확장 포함
     environment:
       POSTGRES_DB: smartdesk
       POSTGRES_USER: smartdesk

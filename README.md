@@ -39,8 +39,10 @@ docker compose up -d
 psql -d postgres -c "CREATE ROLE smartdesk LOGIN PASSWORD 'smartdesk';"
 createdb -O smartdesk smartdesk
 psql -d smartdesk -c "GRANT ALL ON SCHEMA public TO smartdesk;"
+brew install pgvector && psql -d smartdesk -c "CREATE EXTENSION IF NOT EXISTS vector;"   # 단계 2
 ```
 > 이 저장소 세팅 시 위 B 를 이미 실행해 뒀습니다. 백엔드가 `jdbc:postgresql://localhost:5432/smartdesk` 로 접속합니다.
+> Docker 로 실행하면 `pgvector/pgvector` 이미지를 쓰므로 별도 설치 불필요.
 
 ### 2) 백엔드
 ```bash
@@ -113,6 +115,9 @@ npm run dev
 | `GET /api/auth/sessions`, `DELETE /api/auth/sessions/{id}`, `DELETE /api/auth/sessions` | 로그인 세션 목록·개별/전체 종료 (0.5-g) |
 | `GET /api/notifications/stream` | 실시간 알림 SSE (0.5-b) |
 | `GET /api/reports/sla` (+ `/export`) | SLA 준수율 리포트 (관리자, 0.5-d) |
+| `GET /api/analytics/*` | 운영 분석 마트 (관리자, 단계 1.1) |
+| `POST /api/ai/tickets/{id}/related` · `/answer-draft` | 유사 문서·티켓 추천 · RAG 답변 초안 (단계 2) |
+| `GET /api/ai/rag/status` · `POST /api/ai/rag/reindex` | 벡터 색인 상태·재색인 (관리자, 단계 2.1) |
 
 ### 데이터 (ERD)
 `backend/src/main/resources/db/migration/V1__init.sql` 가 ERD 테이블 정의서를 그대로 반영.
@@ -163,6 +168,7 @@ npm run dev
 | 34 | 문서 본문이 평문 `textarea` (SCR-DOC-002 "리치텍스트") | TipTap 에디터(`RichTextEditor.vue`, 서식·제목·목록·인용·코드·링크). 저장 시 서버 `HtmlSanitizer`(OWASP java-html-sanitizer) 로 허용 태그만 남김 — script·on\*·`javascript:` 제거. `DocDetailView` 는 sanitize 된 HTML 을 렌더 | `components/RichTextEditor.vue`, `common/HtmlSanitizer.java` |
 | 35 | 알림이 30초 폴링 (지연·부하) | `GET /api/notifications/stream` SSE — 새 알림 시 `notification` 이벤트로 즉시 신호, 프런트가 목록 재조회. EventSource 대신 fetch 스트리밍(Authorization 헤더)+지수 백오프 재연결. 폴링은 120초 백스톱으로 축소 | `feature/notification/SseHub.java`, `api/notificationStream.js` |
 | 36 | 리포트·감사 데이터 내보내기 없음 | 감사 로그·티켓 이벤트 `?...&` 필터 그대로 `GET /api/audit/export`·`/api/audit/ticket-events/export` CSV(UTF-8 BOM). `GET /api/reports/sla` SLA 준수율(전체·고객사별·카테고리별) + `/reports/sla/export`, `/reports/sla` 화면(관리자) | `feature/report/ReportController`, `common/Csv.java`, `views/SlaReportView.vue` |
+| 37 | 관련 문서가 카테고리 완전일치뿐 (REQ-F-015 의미 검색 아님) | 단계 2 — pgvector 하이브리드 검색(`V7`). 지식문서·종료 티켓을 e5-small 임베딩 + BM25 RRF 융합. 테넌시 필터 SQL 강제. `POST /api/ai/tickets/{id}/related`. RAG 답변 초안(`/answer-draft`, 출처 인용). `rag.enabled` 로 옵트인, LLM 은 `ANTHROPIC_API_KEY` 시 활성 | `feature/rag/*`, `analytics/service /embed`, `views/TicketDetailView.vue` |
 
 ### 구현한 예외 처리 (요구사항 5장)
 - REQ-E-001 계약 만료 후에도 기존 열린 티켓 상태 변경 허용 (`updateStatus` 는 계약 검사 안 함)
@@ -202,12 +208,14 @@ TEST_DB_URL=jdbc:postgresql://localhost:5432/smartdesk_test TEST_DB_DRIVER=org.p
   TEST_DB_USERNAME=smartdesk TEST_DB_PASSWORD=smartdesk \
   JAVA_HOME=$(/usr/libexec/java_home -v 21) mvn test
 ```
-백엔드 총 94개 + 파이썬 4개(`analytics/`).
+백엔드 총 104개 + 파이썬 4개(`analytics/`). 통합 테스트 DB 는 `pgvector/pgvector:pg17` 컨테이너.
 
 | 테스트 | 검증 |
 |---|---|
 | `TenancyIsolationTest` | REQ-N-001 고객사 간 격리 (403), 미인증 JSON 401 |
 | `AnalyticsTest` | 단계 1.1 분석 마트 API — 관리자 전용, 요약/카테고리 통계/히트맵/SLA 권장값, 마트 갱신 |
+| `RagSearchTest` | 단계 2.2 하이브리드 검색 (실제 pgvector) — 유사 문서·티켓 추천, 질의 티켓 제외, **고객사 담당자는 공유 문서만** (SI 내부 문서 차단), 타 고객사 티켓 조회 403, 초안 API 인가 |
+| `RagUtilTest` | 단계 2 HTML 제거·청킹·SHA-256·벡터 리터럴 |
 | `ClassificationStrategyTest` | 단계 1.3 자동분류 전략 — 규칙 기반 키워드 매칭, ML 서비스 불통 시 규칙 폴백 |
 | `TicketLifecycleTest` | 우선순위 산정·SLA 계산·자동분류, 상태전이 검증, 자동배정, 재오픈, priority 엔드포인트, related-docs 스코프 |
 | `AuthFlowTest` | 리프레시 회전, 로그아웃 폐기, 5회 실패 잠금, 탭 혼동 |
@@ -231,21 +239,27 @@ TEST_DB_URL=jdbc:postgresql://localhost:5432/smartdesk_test TEST_DB_DRIVER=org.p
 | `AuthMaintenanceJob` | 매일 03:30 UTC | 만료 토큰 정리 |
 | `SseHeartbeatJob` | 25초 | 실시간 알림 SSE keep-alive + 죽은 연결 정리 (0.5-b) |
 | `AnalyticsRefreshJob` | 매일 00:20 UTC | `analytics.ticket_resolution_stats` materialized view 갱신 (단계 1.1) |
+| `RagReconcileJob` | 10분 | 미색인·변경 문서·티켓 벡터 재색인 (단계 2.1, `rag.enabled` 시) |
 
-## 5.5 데이터 분석 · 티켓 분류 (`analytics/`, 단계 1)
+## 5.5 데이터 분석 · AI (`analytics/` + `feature/rag/`, 단계 1~2)
 
-Python 컴포넌트. 상세는 [`analytics/README.md`](analytics/README.md).
+Python 컴포넌트 상세는 [`analytics/README.md`](analytics/README.md).
 
 ```bash
 cd analytics && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-make data && make eda && make stats && make train   # reports/*.md 생성
-make serve                                           # FastAPI :8000  POST /classify
+make data && make eda && make stats && make train   # 단계 1: reports/*.md
+make serve                                           # FastAPI :8000 — POST /classify, /embed
 ```
 
-- **1.1 파이프라인**: `V6__analytics.sql` — `analytics` 스키마 뷰/마트. `/api/analytics/*` (관리자) + `/analytics` 화면(운영 분석: 처리시간 p50/p90, 재오픈율, SLA 권장값, 요일×시간 히트맵)
-- **1.2 EDA·검정**: 데이터셋 Tobi-Bueck/customer-support-tickets(HF, CC-BY-NC-4.0). 큐⟂우선순위/유형 카이제곱, Kruskal → `reports/eda.md`, `reports/stats.md`
-- **1.3 분류 모델**: TF-IDF + LinearSVC. macro-F1 규칙 0.18 → **0.49 (+31%p)**. FastAPI 서빙
-- **백엔드 연동**: `smartdesk.classification.provider=ml` 시 `MlCategorySuggester` 가 `/classify` 호출, 실패·저신뢰·매핑없음이면 `RuleBasedCategorySuggester` 로 폴백
+**단계 1 — 데이터 분석 · 분류**
+- **1.1 파이프라인**: `V6__analytics.sql` — `analytics` 스키마 뷰/마트. `/api/analytics/*` (관리자) + `/analytics` 화면
+- **1.2 EDA·검정**: 데이터셋 Tobi-Bueck/customer-support-tickets(HF, CC-BY-NC-4.0). 카이제곱·Kruskal → `reports/*.md`
+- **1.3 분류 모델**: TF-IDF + LinearSVC. macro-F1 규칙 0.18 → **0.49 (+31%p)**. `provider=ml` 시 `MlCategorySuggester` 호출, 실패·저신뢰 시 규칙 폴백
+
+**단계 2 — RAG 추천** (`smartdesk.rag.enabled=true` + `/embed` 서비스 필요)
+- **2.1 색인**: `V7__vector_search.sql` — pgvector `embedding`(384차원, HNSW). 문서 + 종료 티켓을 청킹·임베딩(multilingual-e5-small). 저장/종료 이벤트 + 10분 재조정
+- **2.2 하이브리드 검색**: `POST /api/ai/tickets/{id}/related` — 벡터 + BM25 RRF 융합, 테넌시 필터를 SQL 에서 강제. `TicketDetailView` "유사 문서·티켓"
+- **2.3 답변 초안**: `POST /api/ai/tickets/{id}/answer-draft` (SI) — 검색 문서 컨텍스트로 LLM 초안, `[n]` 출처 인용 강제. `RAG_LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY` 로 활성 (미설정 시 근거 문서만)
 
 ## 6. 배포 / 운영
 
@@ -286,7 +300,7 @@ docker compose --profile app up --build
 
 ## 7. 다음 단계 (`docs/ROADMAP.md` 참고)
 
-- 단계 0.5 (a~h) ✅ · 단계 1 (데이터 분석 · 분류 모델) ✅
-- **단계 2**: pgvector 로 지식문서·종료 티켓 의미 검색 → 유사 티켓/문서 추천, RAG 1차 답변 초안
-- 문서 tsvector → 하이브리드(BM25 + 벡터) 검색 전환
+- 단계 0.5 (a~h) ✅ · 단계 1 (데이터 분석·분류) ✅ · 단계 2 (pgvector RAG 추천·초안) ✅
+- **단계 3**: 지능형 트리아지(분류+우선순위+배정 통합), SLA 위반 확률 예측, LangGraph 오케스트레이션
+- cross-encoder 재순위로 RAG 정확도 개선, 색인 outbox 테이블(다중 인스턴스)
 - PostgreSQL Row-Level Security 로 테넌시 이중 방어, 스토리지 S3 어댑터

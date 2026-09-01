@@ -3,10 +3,11 @@
 요구사항정의서 8장("향후 확장 방향": SI 플랫폼 → 데이터분석 → AI 서비스 → K8s 배포)을
 현재 코드베이스 기준으로 구체화한 계획입니다.
 
-- **현재:** Spring Boot 3.3 + Vue 3 + Python(analytics) · 규칙/ML 자동분류 · SLA 타이머(다단계 에스컬레이션) · 승인자 워크플로 · 감사 로그 + CSV/리포트 · 실시간 알림(SSE) · 리치텍스트 문서 · 운영 분석 대시보드 · 마이그레이션 V1~V6 · 백엔드 테스트 94개 + 파이썬 4개
+- **현재:** Spring Boot 3.3 + Vue 3 + Python(analytics) · 규칙/ML 자동분류 · pgvector 하이브리드 검색 + RAG 추천 · SLA 다단계 에스컬레이션 · 승인자 워크플로 · 감사 로그 + CSV/리포트 · 실시간 알림(SSE) · 리치텍스트 문서 · 운영 분석 대시보드 · 마이그레이션 V1~V7 · 백엔드 테스트 104개 + 파이썬 4개
 - **단계 0.5 (빠른 개선) — 완료 ✅** (a~h 아래 표)
 - **단계 1 (데이터 분석) — 완료 ✅** (파이프라인 + EDA/검정 + TF-IDF 분류 모델 + FastAPI 서빙 + 폴백)
-- **다음 큰 모듈:** 단계 2 (RAG 유사 티켓/문서 추천 — pgvector)
+- **단계 2 (RAG 추천) — 완료 ✅** (2.1 pgvector 색인, 2.2 하이브리드 검색 + 테넌시 필터, 2.3 답변 초안 — LLM 연동은 API 키 설정 시 활성)
+- **다음 큰 모듈:** 단계 3 (AI 에이전트: 트리아지·SLA 예측)
 
 ---
 
@@ -74,24 +75,32 @@
 
 ---
 
-## 단계 2 — AI 서비스: RAG 유사 티켓/문서 추천
+## 단계 2 — AI 서비스: RAG 유사 티켓/문서 추천 — 완료 ✅
 
-**목표:** 지식문서와 과거 해결 티켓을 의미 검색으로 담당자에게 제안. `GET /tickets/{id}/related-documents`(현재 카테고리 매칭)를 벡터 검색으로 고도화.
+**목표:** 지식문서와 과거 해결 티켓을 의미 검색으로 담당자에게 제안.
 
-### 2.1 벡터 인덱스
-- 임베딩: 한국어 지원 모델 (multilingual-e5, KURE, 또는 OpenAI text-embedding-3-small)
-- 저장: **`pgvector`** (운영 PostgreSQL 재활용). `document.search_tsv`(이미 존재)와 함께 하이브리드
-- 색인 대상: `document`(공개범위 유지), 종료(CLOSED) 티켓의 제목+내용+해결 코멘트
-- 재색인: 문서 저장 / 티켓 종료 시 outbox 이벤트 → 비동기 임베딩 워커
+### 2.1 벡터 인덱스 ✅ — `V7__vector_search.sql`, `feature/rag/*`, `analytics/service /embed`
+- 임베딩: **multilingual-e5-small** (384차원, 한국어). analytics/service 의 `POST /embed` (시작 시 warmup)
+- 저장: **pgvector** `embedding` 테이블 + HNSW 인덱스. `ticket.search_tsv` 추가 (문서엔 V3 의 `search_tsv`)
+- 색인 대상: 지식문서 전체, 종료(CLOSED) 티켓의 제목+내용+코멘트. `source_hash` 로 변경분만 재색인
+- 트리거: `RagIndexListener`(`@TransactionalEventListener` AFTER_COMMIT) + `RagReconcileJob`(10분) 보정
+- Testcontainers 이미지를 `pgvector/pgvector:pg17` 로 전환 (`PgVectorContainer`)
 
-### 2.2 검색·추천
-- `POST /api/ai/tickets/{id}/related` → 유사 문서 top-k + 유사 과거 티켓 top-k
-- **테넌시·공개범위 필터를 벡터 검색 WHERE 절에서 강제** (고객사 담당자 = 공유 문서만, REQ-N-001) — 현재 `AttachmentController.assertCanAccess` / `DocumentRepo.searchSharedWith` 와 동일 원칙
-- 하이브리드: BM25(tsvector) + 벡터 → 재순위(cross-encoder reranker)
+### 2.2 하이브리드 검색 ✅ — `EmbeddingStore`, `RagSearchService`
+- `POST /api/ai/tickets/{id}/related` → 유사 문서 top-k + 유사 종료 티켓 top-k
+- **테넌시 필터를 SQL WHERE 절에서 강제**: 고객사 담당자 = 공유 문서(`document_share`) + 자사 티켓만 (REQ-N-001, 런타임 검증)
+- 하이브리드: 벡터(`<=>` 코사인) + BM25(`ts_rank`) → **RRF 융합**. cross-encoder 재순위는 향후
+- `TicketDetailView`: RAG 있으면 의미 검색 결과, 없으면 카테고리 매칭 폴백
 
-### 2.3 RAG 답변 초안
-- 티켓 상세에 "1차 답변 초안" 버튼: 검색된 문서를 컨텍스트로 LLM 초안 생성 → 담당자 검수 후 코멘트 게시
-- 환각 억제: 출처 문서 인용 강제, 근거 부족 시 "관련 문서 없음"
+### 2.3 RAG 답변 초안 ✅ (LLM 연동은 키 설정 시) — `AnswerDraftService`, `LlmClient`
+- `POST /api/ai/tickets/{id}/answer-draft` (SI 담당자 전용): 검색 문서를 번호 매긴 컨텍스트로 LLM 초안
+- 환각 억제: `[n]` 출처 인용 강제, 근거 부족 시 "관련 문서를 찾지 못했습니다" 고정 문구
+- `LlmClient` = `AnthropicLlmClient`(anthropic-java, 기본 `claude-opus-5`) / disabled. `provider=none`(기본)이면 근거 문서만 반환
+- `TicketDetailView` "1차 답변 초안" 버튼 + "코멘트에 넣기". 관리자 `/analytics` 에 RAG 색인 상태·재색인
+
+**활성화:** `smartdesk.rag.enabled=true` + analytics/service 기동. 초안은 `RAG_LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY`.
+
+**한계·다음:** e5-small 은 짧은 한국어에서 절대 유사도가 압축돼 있어 랭킹 위주로 사용 (재순위 모델로 개선 여지). 색인은 단일 인스턴스 가정 — 다중 인스턴스는 outbox 테이블로.
 
 **연결점:** REQ-F-013(지식문서)·REQ-F-015(검색) 의미 검색화
 
@@ -136,8 +145,8 @@
 
 1. ~~**0.5** 전체 (a~h)~~ — 완료
 2. ~~**단계 1** 전체 (파이프라인 → EDA → 분류 모델)~~ — 완료
-3. **단계 2.1~2.2** (pgvector 색인 + 하이브리드 검색) — 4주  ← 다음
-4. **단계 2.3 + 단계 3.1** (RAG 초안 + 트리아지) — 4주
+3. ~~**단계 2** 전체 (pgvector 색인 + 하이브리드 검색 + RAG 초안)~~ — 완료
+4. **단계 3.1** (지능형 트리아지 — 분류/우선순위/배정 통합) — 3주  ← 다음
 5. **단계 4** (RLS, S3, K8s) — 지속
 
 ---
