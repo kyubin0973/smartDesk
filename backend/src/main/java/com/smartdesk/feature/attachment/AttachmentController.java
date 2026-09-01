@@ -10,7 +10,6 @@ import com.smartdesk.repo.TicketRepo;
 import com.smartdesk.security.AuthPrincipal;
 import com.smartdesk.security.CurrentUser;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.*;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,15 +17,13 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.*;
 import java.time.Instant;
 import java.util.List;
-import java.util.UUID;
+import java.util.Set;
 
 /**
  * 첨부파일 (화면설계서 SCR-TICKET-001 '텍스트/이미지 첨부').
- * 로컬 디스크 저장 — 확장 시 S3/GCS 어댑터로 교체.
+ * 저장은 {@link BlobStorage} 어댑터 — 로컬 디스크 또는 S3 (단계 4).
  */
 @RestController
 @RequestMapping("/api/attachments")
@@ -38,17 +35,24 @@ public class AttachmentController {
     private final TicketRepo tickets;
     private final DocumentRepo documents;
     private final DocumentShareRepo documentShares;
-    private final Path root;
+    private final BlobStorage storage;
+    private final Set<String> allowedTypes;
 
     public AttachmentController(AttachmentRepo attachments, TicketRepo tickets, DocumentRepo documents,
-                                DocumentShareRepo documentShares,
-                                @Value("${smartdesk.storage.dir:./var/attachments}") String dir) throws IOException {
+                                DocumentShareRepo documentShares, BlobStorage storage,
+                                @Value("${smartdesk.storage.allowed-content-types:"
+                                        + "image/png,image/jpeg,image/gif,image/webp,application/pdf,"
+                                        + "text/plain,text/csv,application/zip,"
+                                        + "application/vnd.openxmlformats-officedocument.wordprocessingml.document,"
+                                        + "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,"
+                                        + "application/vnd.openxmlformats-officedocument.presentationml.presentation,"
+                                        + "application/msword,application/vnd.ms-excel}") Set<String> allowedTypes) {
         this.attachments = attachments;
         this.tickets = tickets;
         this.documents = documents;
         this.documentShares = documentShares;
-        this.root = Paths.get(dir).toAbsolutePath().normalize();
-        Files.createDirectories(this.root);
+        this.storage = storage;
+        this.allowedTypes = allowedTypes;
     }
 
     public record AttachmentView(Long id, String filename, String contentType, long sizeBytes, Instant createdAt) {}
@@ -73,13 +77,13 @@ public class AttachmentController {
         }
         if (file.isEmpty()) throw ApiException.badRequest("빈 파일입니다.");
         if (file.getSize() > MAX_BYTES) throw ApiException.badRequest("파일이 10MB 를 초과합니다.");
-
-        String key = UUID.randomUUID() + "_" + safeName(file.getOriginalFilename());
-        Path target = root.resolve(key).normalize();
-        if (!target.startsWith(root)) throw ApiException.badRequest("잘못된 파일명입니다.");
-        try (InputStream in = file.getInputStream()) {
-            Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+        String contentType = file.getContentType();
+        if (contentType == null || !allowedTypes.contains(contentType.toLowerCase())) {
+            throw ApiException.badRequest("허용되지 않는 파일 형식입니다: " + contentType);
         }
+
+        String key = storage.put(file.getOriginalFilename(), file.getInputStream(),
+                file.getSize(), contentType);
 
         Attachment a = new Attachment();
         a.setOwnerType(ownerType);
@@ -98,9 +102,7 @@ public class AttachmentController {
     public ResponseEntity<Resource> download(@PathVariable Long id) throws IOException {
         Attachment a = attachments.findById(id).orElseThrow(() -> ApiException.notFound("첨부"));
         assertCanAccess(a.getOwnerType(), a.getOwnerId());
-        Path path = root.resolve(a.getStorageKey()).normalize();
-        if (!path.startsWith(root) || !Files.exists(path)) throw ApiException.notFound("파일");
-        Resource res = new InputStreamResource(Files.newInputStream(path));
+        Resource res = storage.get(a.getStorageKey());
         return ResponseEntity.ok()
                 .contentType(a.getContentType() != null ? MediaType.parseMediaType(a.getContentType()) : MediaType.APPLICATION_OCTET_STREAM)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + a.getFilename() + "\"")
@@ -110,12 +112,12 @@ public class AttachmentController {
 
     @DeleteMapping("/{id}")
     @Transactional
-    public ResponseEntity<Void> delete(@PathVariable Long id) throws IOException {
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
         Attachment a = attachments.findById(id).orElseThrow(() -> ApiException.notFound("첨부"));
         AuthPrincipal p = assertCanAccess(a.getOwnerType(), a.getOwnerId());
         boolean owner = p.type().name().equals(a.getUploadedByType()) && p.id().equals(a.getUploadedById());
         if (!owner && !p.isManager()) throw ApiException.forbidden("삭제 권한이 없습니다.");
-        Files.deleteIfExists(root.resolve(a.getStorageKey()).normalize());
+        storage.delete(a.getStorageKey());
         attachments.delete(a);
         return ResponseEntity.noContent().build();
     }

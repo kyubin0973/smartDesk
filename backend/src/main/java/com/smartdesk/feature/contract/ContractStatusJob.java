@@ -3,6 +3,7 @@ package com.smartdesk.feature.contract;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.annotation.Profile;
 import org.springframework.context.event.EventListener;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -28,6 +29,7 @@ public class ContractStatusJob {
 
     /** 매일 00:10 (UTC). */
     @Scheduled(cron = "${smartdesk.contract.status-cron:0 10 0 * * *}", zone = "UTC")
+    @SchedulerLock(name = "contract-status", lockAtMostFor = "PT10M")
     public void refresh() {
         service.applyTransitions();
     }

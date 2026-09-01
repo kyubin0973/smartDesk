@@ -1,6 +1,7 @@
 package com.smartdesk.feature.rag;
 
 import org.springframework.context.annotation.Profile;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -18,6 +19,7 @@ public class RagReconcileJob {
     }
 
     @Scheduled(cron = "${smartdesk.rag.reconcile-cron:0 */10 * * * *}")
+    @SchedulerLock(name = "rag-reconcile", lockAtMostFor = "PT9M", lockAtLeastFor = "PT10S")
     public void run() {
         if (props.isEnabled()) indexing.reconcile();
     }

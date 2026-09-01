@@ -4,6 +4,7 @@ import com.smartdesk.repo.PasswordResetTokenRepo;
 import com.smartdesk.repo.RefreshTokenRepo;
 import com.smartdesk.repo.RevokedAccessTokenRepo;
 import org.springframework.context.annotation.Profile;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +28,7 @@ public class AuthMaintenanceJob {
     }
 
     @Scheduled(cron = "0 30 3 * * *", zone = "UTC")
+    @SchedulerLock(name = "auth-maintenance", lockAtMostFor = "PT10M")
     @Transactional
     public void purge() {
         Instant now = Instant.now();

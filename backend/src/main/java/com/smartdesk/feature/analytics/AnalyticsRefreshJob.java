@@ -3,6 +3,7 @@ package com.smartdesk.feature.analytics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Profile;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -20,6 +21,7 @@ public class AnalyticsRefreshJob {
     }
 
     @Scheduled(cron = "${smartdesk.analytics.refresh-cron:0 20 0 * * *}")   // 매일 00:20 UTC
+    @SchedulerLock(name = "analytics-refresh", lockAtMostFor = "PT10M")
     public void refresh() {
         long t0 = System.currentTimeMillis();
         analytics.refreshMaterializedViews();
