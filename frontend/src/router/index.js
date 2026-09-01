@@ -88,6 +88,12 @@ const routes = [
     component: () => import('../views/SlaReportView.vue'),
     meta: { si: true, manager: true },
   },
+  {
+    path: '/analytics',
+    name: 'analytics',
+    component: () => import('../views/AnalyticsView.vue'),
+    meta: { si: true, manager: true },
+  },
 
   // 고객사 담당자
   {

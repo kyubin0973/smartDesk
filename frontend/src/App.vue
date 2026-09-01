@@ -24,6 +24,7 @@ const nav = computed(() => {
     { to: '/docs', label: '지식문서', ico: '📚' },
     ...(auth.isManager
       ? [
+          { to: '/analytics', label: '운영 분석', ico: '🔬' },
           { to: '/reports/sla', label: 'SLA 리포트', ico: '📈' },
           { to: '/audit', label: '감사 로그', ico: '🔎' },
         ]
