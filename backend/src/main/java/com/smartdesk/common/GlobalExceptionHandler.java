@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -45,6 +46,14 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({ HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class, IllegalArgumentException.class })
     public ResponseEntity<ApiError> handleBadInput(Exception e, HttpServletRequest req) {
         return ResponseEntity.badRequest().body(body(400, "BAD_REQUEST", "요청 형식이 올바르지 않습니다.", req));
+    }
+
+    /** 매핑되지 않은 경로 — generic 핸들러로 떨어져 500 + ERROR 스택트레이스가 남던 것을 404 로 정정. */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiError> handleNotFound(NoResourceFoundException e, HttpServletRequest req) {
+        log.debug("매핑되지 않은 경로: {} {}", req.getMethod(), req.getRequestURI());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(body(404, "NOT_FOUND", "요청한 리소스를 찾을 수 없습니다.", req));
     }
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
