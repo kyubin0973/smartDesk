@@ -88,6 +88,20 @@ smartdesk:
       "[Billing and Payments]": Purchase
       "[Sales and Pre-Sales]": Purchase
       "[Returns and Exchanges]": Purchase
+  rag:
+    # 단계 2: 벡터 검색 + RAG 초안. true 로 켜면 analytics/service(/embed) 필요.
+    enabled: ${RAG_ENABLED:false}
+    embed-url: ${RAG_EMBED_URL:http://localhost:8000}
+    embed-timeout-ms: 20000
+    top-k: 5
+    chunk-chars: 600
+    reconcile-cron: "0 */10 * * * *"
+    llm:
+      # none | anthropic. anthropic 이면 ANTHROPIC_API_KEY(또는 아래 api-key) 필요.
+      provider: ${RAG_LLM_PROVIDER:none}
+      model: ${RAG_LLM_MODEL:claude-opus-5}
+      max-tokens: 1500
+      api-key: ${RAG_LLM_API_KEY:}
 
 logging:
   level:

@@ -1,5 +1,7 @@
 package com.smartdesk;
 
+import com.smartdesk.support.PgVectorContainer;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartdesk.domain.Enums.AttachmentOwnerType;
 import com.smartdesk.repo.AttachmentRepo;
@@ -24,7 +26,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-class AttachmentTest {
+class AttachmentTest extends PgVectorContainer {
 
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper json;

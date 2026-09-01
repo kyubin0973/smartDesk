@@ -1,5 +1,7 @@
 package com.smartdesk;
 
+import com.smartdesk.support.PgVectorContainer;
+
 import com.smartdesk.domain.*;
 import com.smartdesk.domain.Enums.*;
 import com.smartdesk.feature.ticket.SlaMonitorService;
@@ -23,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 @SpringBootTest
 @ActiveProfiles("test")
-class SlaEscalationTest {
+class SlaEscalationTest extends PgVectorContainer {
 
     @Autowired SlaMonitorService slaMonitor;
     @Autowired TicketRepo tickets;

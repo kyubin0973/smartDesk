@@ -44,13 +44,16 @@ public class TicketController {
     private final PriorityRules priorityRules;
     private final TicketEventService eventLog;
     private final NotificationService notifications;
+    private final org.springframework.context.ApplicationEventPublisher events;
 
     public TicketController(TicketRepo tickets, ContractRepo contracts, CommentRepo comments,
                             TicketHistoryRepo histories, CategoryRepo categories, SystemAssetRepo systems,
                             AppUserRepo users, ClientUserRepo clientUsers, DocumentRepo documents,
                             DocumentShareRepo documentShares, SlaService sla, com.smartdesk.feature.ticket.classify.CategorySuggester suggestion,
                             AssignmentService assignment, PriorityRules priorityRules,
-                            TicketEventService eventLog, NotificationService notifications) {
+                            TicketEventService eventLog, NotificationService notifications,
+                            org.springframework.context.ApplicationEventPublisher events) {
+        this.events = events;
         this.tickets = tickets;
         this.contracts = contracts;
         this.comments = comments;
@@ -286,6 +289,7 @@ public class TicketController {
         // 요청자에게 상태 변경 알림
         notifications.notifyClientUser(t.getRequesterId(), NotificationType.TICKET_STATUS,
                 "티켓 상태 변경: #" + t.getId(), t.getTitle() + " → " + next.name(), t.getId());
+        events.publishEvent(com.smartdesk.feature.rag.RagIndexEvents.SourceChanged.ticket(ticketId));
         return toDetail(t);
     }
 
@@ -314,6 +318,7 @@ public class TicketController {
         }
         notifications.notifyClientUser(t.getRequesterId(), NotificationType.TICKET_STATUS,
                 "티켓 종료: #" + t.getId(), t.getTitle(), t.getId());
+        events.publishEvent(com.smartdesk.feature.rag.RagIndexEvents.SourceChanged.ticket(ticketId));
         return toDetail(t);
     }
 

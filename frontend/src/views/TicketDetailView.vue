@@ -14,9 +14,12 @@ const thread = ref({ comments: [], history: [] })
 const categories = ref([])
 const staff = ref([])
 const relatedDocs = ref([])
+const related = ref({ documents: [], tickets: [], ragUsed: false })
 const attachments = ref([])
 const newComment = ref('')
 const error = ref('')
+const draft = ref(null)
+const draftBusy = ref(false)
 
 const STATUSES = ['RECEIVED', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']
 const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
@@ -25,6 +28,11 @@ async function load() {
   ticket.value = await api(`/tickets/${id}`)
   thread.value = await api(`/tickets/${id}/comments`)
   relatedDocs.value = await api(`/tickets/${id}/related-documents`).catch(() => [])
+  related.value = await api(`/ai/tickets/${id}/related`, { method: 'POST' }).catch(() => ({
+    documents: [],
+    tickets: [],
+    ragUsed: false,
+  }))
   attachments.value = await api('/attachments', {
     params: { ownerType: 'TICKET', ownerId: id },
   }).catch(() => [])
@@ -67,6 +75,25 @@ function reject() {
   const reason = prompt('반려 사유를 입력하세요')
   if (!reason) return
   call(() => api(`/tickets/${id}/reject`, { method: 'POST', body: { reason } }))
+}
+
+async function generateDraft() {
+  draftBusy.value = true
+  error.value = ''
+  try {
+    draft.value = await api(`/ai/tickets/${id}/answer-draft`, { method: 'POST' })
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    draftBusy.value = false
+  }
+}
+
+function draftToComment() {
+  if (!draft.value?.draft) return
+  const cites = (draft.value.citations || []).map((c) => `[${c.n}] ${c.title}`).join('\n')
+  newComment.value = draft.value.draft + (cites ? `\n\n— 출처\n${cites}` : '')
+  draft.value = null
 }
 
 async function addComment() {
@@ -286,15 +313,81 @@ const timeline = computed(() => {
         </div>
 
         <div class="card">
-          <h3 class="card__title">관련 지식문서</h3>
-          <ul v-if="relatedDocs.length" style="list-style: none; padding: 0; margin: 0">
-            <li v-for="d in relatedDocs" :key="d.id" style="padding: 6px 0">
+          <div class="row spread">
+            <h3 class="card__title" style="margin: 0">
+              유사 문서 · 티켓
+              <span v-if="related.ragUsed" class="badge plain blue" style="font-size: 10px"
+                >의미 검색</span
+              >
+            </h3>
+            <button
+              v-if="auth.isSiUser && related.ragUsed"
+              class="secondary sm"
+              :disabled="draftBusy"
+              @click="generateDraft"
+            >
+              {{ draftBusy ? '생성 중…' : '1차 답변 초안' }}
+            </button>
+          </div>
+
+          <template v-if="related.ragUsed">
+            <div
+              v-for="d in related.documents"
+              :key="'d' + d.id"
+              style="padding: 7px 0; border-bottom: 1px solid var(--border)"
+            >
               <RouterLink v-if="auth.isSiUser" :to="`/docs/${d.id}/edit`">{{ d.title }}</RouterLink>
-              <span v-else>{{ d.title }}</span>
-              <span class="muted" style="font-size: 12px"> · v{{ d.version }}</span>
-            </li>
-          </ul>
-          <p v-else class="muted" style="font-size: 13px">동일 카테고리 문서 없음</p>
+              <RouterLink v-else :to="`/docs/${d.id}`">{{ d.title }}</RouterLink>
+              <p class="muted" style="font-size: 12px; margin: 3px 0 0">{{ d.snippet }}</p>
+            </div>
+            <div v-for="t in related.tickets" :key="'t' + t.id" style="padding: 7px 0">
+              <RouterLink :to="`/tickets/${t.id}`">#{{ t.id }} {{ t.title }}</RouterLink>
+              <span class="badge gray" style="font-size: 10px">종료</span>
+              <p class="muted" style="font-size: 12px; margin: 3px 0 0">{{ t.snippet }}</p>
+            </div>
+            <p
+              v-if="!related.documents.length && !related.tickets.length"
+              class="muted"
+              style="font-size: 13px"
+            >
+              유사한 문서·티켓 없음
+            </p>
+          </template>
+
+          <template v-else>
+            <ul v-if="relatedDocs.length" style="list-style: none; padding: 0; margin: 8px 0 0">
+              <li v-for="d in relatedDocs" :key="d.id" style="padding: 6px 0">
+                <RouterLink v-if="auth.isSiUser" :to="`/docs/${d.id}/edit`">{{
+                  d.title
+                }}</RouterLink>
+                <span v-else>{{ d.title }}</span>
+                <span class="muted" style="font-size: 12px"> · v{{ d.version }}</span>
+              </li>
+            </ul>
+            <p v-else class="muted" style="font-size: 13px">동일 카테고리 문서 없음</p>
+          </template>
+
+          <div v-if="draft" class="notice" style="margin-top: 12px">
+            <div class="row spread" style="margin-bottom: 6px">
+              <strong style="font-size: 13px">
+                답변 초안
+                <span v-if="draft.llmUsed" class="muted">· {{ draft.model }}</span>
+                <span v-else class="muted">· 근거 문서만 (LLM 비활성)</span>
+              </strong>
+              <button v-if="draft.draft" class="ghost sm" @click="draftToComment">
+                코멘트에 넣기
+              </button>
+            </div>
+            <p v-if="draft.draft" style="white-space: pre-wrap; font-size: 13px; margin: 0">
+              {{ draft.draft }}
+            </p>
+            <ol style="font-size: 12px; margin: 8px 0 0; padding-left: 18px">
+              <li v-for="c in draft.citations" :key="c.n">
+                <RouterLink :to="`/docs/${c.documentId}/edit`">{{ c.title }}</RouterLink>
+                <span class="muted"> — {{ c.excerpt }}</span>
+              </li>
+            </ol>
+          </div>
         </div>
       </div>
     </div>

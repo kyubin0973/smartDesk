@@ -1,5 +1,7 @@
 package com.smartdesk;
 
+import com.smartdesk.support.PgVectorContainer;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartdesk.domain.Enums.NotificationType;
 import com.smartdesk.domain.Notification;
@@ -23,7 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-class NotificationApiTest {
+class NotificationApiTest extends PgVectorContainer {
 
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper json;

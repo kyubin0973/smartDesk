@@ -26,6 +26,7 @@ public interface TicketRepo extends JpaRepository<Ticket, Long> {
                         Pageable pageable);
 
     List<Ticket> findByClientId(Long clientId);
+    List<Ticket> findByStatus(Enums.TicketStatus status);
     List<Ticket> findByClientIdAndStatusIn(Long clientId, List<Enums.TicketStatus> statuses);
 
     /** 0.5-d 리포트: 상태 + 생성일 구간으로 (전체 고객사). */

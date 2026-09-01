@@ -9,6 +9,8 @@ const throughput = ref([])
 const slaRec = ref([])
 const error = ref('')
 const refreshing = ref(false)
+const rag = ref(null)
+const ragBusy = ref(false)
 
 const DOW = ['일', '월', '화', '수', '목', '금', '토']
 
@@ -27,8 +29,21 @@ async function load() {
     heatmap.value = h
     throughput.value = t
     slaRec.value = r
+    rag.value = await api('/ai/rag/status').catch(() => null)
   } catch (e) {
     error.value = e.message
+  }
+}
+
+async function reindexRag() {
+  ragBusy.value = true
+  try {
+    await api('/ai/rag/reindex', { method: 'POST' })
+    rag.value = await api('/ai/rag/status')
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    ragBusy.value = false
   }
 }
 
@@ -86,6 +101,24 @@ onMounted(load)
   </div>
 
   <p v-if="error" class="error">{{ error }}</p>
+
+  <div v-if="rag" class="card" style="margin-bottom: 18px">
+    <div class="row spread">
+      <h3 class="card__title" style="margin: 0">
+        RAG 벡터 색인 <span class="muted">(단계 2)</span>
+      </h3>
+      <button v-if="rag.enabled" class="secondary sm" :disabled="ragBusy" @click="reindexRag">
+        {{ ragBusy ? '색인 중…' : '재색인' }}
+      </button>
+    </div>
+    <p v-if="!rag.enabled" class="hint" style="margin-top: 6px">
+      비활성 — <code>smartdesk.rag.enabled=true</code> + 임베딩 서비스(analytics/service) 필요
+    </p>
+    <p v-else class="muted" style="font-size: 13px; margin-top: 6px">
+      문서 청크 {{ rag.documentChunks }} · 티켓 청크 {{ rag.ticketChunks }} · 답변 초안
+      {{ rag.draftEnabled ? rag.draftModel : '비활성' }}
+    </p>
+  </div>
 
   <template v-if="overview">
     <div class="grid cols-4" style="margin-bottom: 18px">

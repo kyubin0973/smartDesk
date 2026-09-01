@@ -1,5 +1,7 @@
 package com.smartdesk;
 
+import com.smartdesk.support.PgVectorContainer;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,7 +23,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Transactional
-public abstract class AbstractIntegrationTest {
+public abstract class AbstractIntegrationTest extends PgVectorContainer {
 
     @Autowired protected MockMvc mvc;
     @Autowired protected ObjectMapper json;

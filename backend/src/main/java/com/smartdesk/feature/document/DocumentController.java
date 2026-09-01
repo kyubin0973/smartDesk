@@ -29,17 +29,20 @@ public class DocumentController {
     private final CategoryRepo categories;
     private final com.smartdesk.feature.audit.AuditService audit;
     private final com.smartdesk.common.HtmlSanitizer htmlSanitizer;
+    private final org.springframework.context.ApplicationEventPublisher events;
 
     public DocumentController(DocumentRepo documents, DocumentVersionRepo versions,
                               DocumentShareRepo shares, CategoryRepo categories,
                               com.smartdesk.feature.audit.AuditService audit,
-                              com.smartdesk.common.HtmlSanitizer htmlSanitizer) {
+                              com.smartdesk.common.HtmlSanitizer htmlSanitizer,
+                              org.springframework.context.ApplicationEventPublisher events) {
         this.documents = documents;
         this.versions = versions;
         this.shares = shares;
         this.categories = categories;
         this.audit = audit;
         this.htmlSanitizer = htmlSanitizer;
+        this.events = events;
     }
 
     public record DocRow(Long id, String title, int version, String scope, String categoryName,
@@ -124,6 +127,7 @@ public class DocumentController {
         d = documents.save(d);
         applyShares(d, d.getScope(), req.clientIds());
         versions.save(new DocumentVersion(d.getId(), 1, d.getTitle(), d.getContent(), p.id()));
+        events.publishEvent(com.smartdesk.feature.rag.RagIndexEvents.SourceChanged.document(d.getId()));
         return toDetail(d);
     }
 
@@ -148,6 +152,7 @@ public class DocumentController {
         d.setUpdatedAt(Instant.now());
         d = documents.save(d);
         versions.save(new DocumentVersion(d.getId(), d.getVersion(), d.getTitle(), d.getContent(), p.id()));
+        events.publishEvent(com.smartdesk.feature.rag.RagIndexEvents.SourceChanged.document(d.getId()));
         return toDetail(d);
     }
 
