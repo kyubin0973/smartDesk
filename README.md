@@ -156,6 +156,7 @@ npm run dev
 | 32 | 문서 첨부 UI 없음 (백엔드만 존재) | `DocEditView` 에 첨부 섹션(SI 업/삭제), 고객사 열람용 `DocDetailView`(읽기전용). 문서 첨부는 **공유받은 고객사만 다운로드**, 업로드/삭제는 SI 만 | `components/AttachmentSection.vue`, `AttachmentController.assertCanAccess` |
 | 33 | 감사 로그 조회 화면 없음 (REQ-F-014) | **`audit_log` 테이블**(V5) — 로그인 성공·실패, 로그아웃, 비밀번호 재설정·변경, SI/고객사 계정 생성·비활성화, 계약 오프보딩, 문서 공개범위 변경. 인증 이벤트는 `REQUIRES_NEW` 로 **실패한 요청도 기록**. `/audit` 화면(관리자): "보안·관리" + "티켓 이벤트"(ticket_event) 탭, 액션·행위자·기간 필터 | `feature/audit/AuditService`, `AuditController`, `views/AuditLogView.vue` |
 | 34 | 문서 본문이 평문 `textarea` (SCR-DOC-002 "리치텍스트") | TipTap 에디터(`RichTextEditor.vue`, 서식·제목·목록·인용·코드·링크). 저장 시 서버 `HtmlSanitizer`(OWASP java-html-sanitizer) 로 허용 태그만 남김 — script·on\*·`javascript:` 제거. `DocDetailView` 는 sanitize 된 HTML 을 렌더 | `components/RichTextEditor.vue`, `common/HtmlSanitizer.java` |
+| 35 | 알림이 30초 폴링 (지연·부하) | `GET /api/notifications/stream` SSE — 새 알림 시 `notification` 이벤트로 즉시 신호, 프런트가 목록 재조회. EventSource 대신 fetch 스트리밍(Authorization 헤더)+지수 백오프 재연결. 폴링은 120초 백스톱으로 축소 | `feature/notification/SseHub.java`, `api/notificationStream.js` |
 
 ### 구현한 예외 처리 (요구사항 5장)
 - REQ-E-001 계약 만료 후에도 기존 열린 티켓 상태 변경 허용 (`updateStatus` 는 계약 검사 안 함)
@@ -220,6 +221,7 @@ TEST_DB_URL=jdbc:postgresql://localhost:5432/smartdesk_test TEST_DB_DRIVER=org.p
 | `SlaMonitorJob` | 5분 | 열린 티켓 SLA 임박(2h)/초과 스캔 → 알림 + 이벤트 |
 | `ContractStatusJob` | 매일 00:10 UTC + 부팅 시 | 계약 상태 전이 |
 | `AuthMaintenanceJob` | 매일 03:30 UTC | 만료 토큰 정리 |
+| `SseHeartbeatJob` | 25초 | 실시간 알림 SSE keep-alive + 죽은 연결 정리 (0.5-b) |
 
 ## 6. 배포 / 운영
 

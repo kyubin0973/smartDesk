@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api/http'
+import { openNotificationStream } from '../api/notificationStream'
 import { dateTime } from '../labels'
 
 const router = useRouter()
@@ -9,6 +10,8 @@ const open = ref(false)
 const items = ref([])
 const unread = ref(0)
 let timer = null
+let closeStream = null
+let pokeDebounce = null
 
 async function load() {
   try {
@@ -18,6 +21,12 @@ async function load() {
   } catch (_) {
     /* 조용히 무시 */
   }
+}
+
+// SSE 신호가 몰아서 올 때 한 번만 재조회
+function onPoke() {
+  clearTimeout(pokeDebounce)
+  pokeDebounce = setTimeout(load, 300)
 }
 
 async function openItem(n) {
@@ -40,9 +49,14 @@ async function markAll() {
 
 onMounted(() => {
   load()
-  timer = setInterval(load, 30000)
+  closeStream = openNotificationStream(onPoke)
+  timer = setInterval(load, 120000) // SSE 백스톱 (연결 실패 시에도 최소 동기화)
 })
-onUnmounted(() => clearInterval(timer))
+onUnmounted(() => {
+  clearInterval(timer)
+  clearTimeout(pokeDebounce)
+  if (closeStream) closeStream()
+})
 </script>
 
 <template>

@@ -19,10 +19,12 @@ public class NotificationService {
 
     private final NotificationWriter writer;
     private final NotificationChannels channels;
+    private final SseHub sseHub;
 
-    public NotificationService(NotificationWriter writer, NotificationChannels channels) {
+    public NotificationService(NotificationWriter writer, NotificationChannels channels, SseHub sseHub) {
         this.writer = writer;
         this.channels = channels;
+        this.sseHub = sseHub;
     }
 
     public void notifyUser(Long userId, NotificationType type, String title, String body, Long ticketId) {
@@ -45,6 +47,7 @@ public class NotificationService {
         }
         if (persisted) {
             channels.fanOut(recipientType, recipientId, type, title, body, ticketId);
+            sseHub.poke(recipientType, recipientId);   // 0.5-b: 실시간 신호
         }
     }
 }

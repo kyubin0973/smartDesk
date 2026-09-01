@@ -28,6 +28,7 @@ class NotificationApiTest {
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper json;
     @Autowired NotificationRepo repo;
+    @Autowired com.smartdesk.feature.notification.SseHub sseHub;
 
     private final List<Long> created = new ArrayList<>();
     private String siToken;   // admin@smartdesk.io = USER id 1
@@ -79,6 +80,25 @@ class NotificationApiTest {
                 .andExpect(status().isNoContent());
         org.junit.jupiter.api.Assertions.assertEquals(0,
                 repo.countByRecipientTypeAndRecipientIdAndReadAtIsNull("USER", 1L));
+    }
+
+    @Test
+    void sseStream_opensAndReceivesPokeOnNewNotification() throws Exception {
+        var result = mvc.perform(get("/api/notifications/stream").header("Authorization", "Bearer " + siToken))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        // 등록 시 connected 이벤트가 바로 버퍼링됨
+        org.junit.jupiter.api.Assertions.assertTrue(sseHub.connectionCount() >= 1);
+        String initial = result.getResponse().getContentAsString();
+        org.junit.jupiter.api.Assertions.assertTrue(initial.contains("connected"));
+
+        // poke → notification 이벤트 프레임이 응답에 추가됨
+        sseHub.poke("USER", 1L);
+
+        org.junit.jupiter.api.Assertions.assertTrue(
+                result.getResponse().getContentAsString().contains("event:notification"),
+                "poke 후 notification 이벤트 프레임이 전송돼야 함");
     }
 
     @Test

@@ -66,6 +66,7 @@ smartdesk:
     email-types: SLA_BREACHED,SLA_DUE_SOON,TICKET_ASSIGNED
     slack-types: SLA_BREACHED
     slack-webhook-url: ${SLACK_WEBHOOK_URL:}
+    sse-heartbeat-ms: 25000        # 0.5-b: 실시간 알림 SSE keep-alive 주기
 
 # 이메일 발송하려면 아래를 설정 (미설정 시 로그 어댑터):
 # spring.mail.host / port / username / password / properties.mail.smtp.auth 등

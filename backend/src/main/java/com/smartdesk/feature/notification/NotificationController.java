@@ -5,9 +5,11 @@ import com.smartdesk.domain.Notification;
 import com.smartdesk.repo.NotificationRepo;
 import com.smartdesk.security.AuthPrincipal;
 import com.smartdesk.security.CurrentUser;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Instant;
 import java.util.List;
@@ -18,9 +20,18 @@ import java.util.Map;
 public class NotificationController {
 
     private final NotificationRepo repo;
+    private final com.smartdesk.feature.notification.SseHub sseHub;
 
-    public NotificationController(NotificationRepo repo) {
+    public NotificationController(NotificationRepo repo, com.smartdesk.feature.notification.SseHub sseHub) {
         this.repo = repo;
+        this.sseHub = sseHub;
+    }
+
+    /** 0.5-b: 실시간 알림 스트림. 새 알림이 생기면 name=notification 이벤트를 보낸다 (프런트는 목록 재조회). */
+    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter stream() {
+        AuthPrincipal p = CurrentUser.get();
+        return sseHub.register(p.type().name(), p.id());
     }
 
     public record NotificationView(Long id, String type, String title, String body, Long ticketId,
