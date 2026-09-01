@@ -1,9 +1,15 @@
 spring:
   datasource:
-    # 로컬 PostgreSQL 의 별도 테스트 DB. (CI 에서는 postgres 서비스 컨테이너 필요)
-    url: ${TEST_DB_URL:jdbc:postgresql://localhost:5432/smartdesk_test}
-    username: ${TEST_DB_USERNAME:smartdesk}
-    password: ${TEST_DB_PASSWORD:smartdesk}
+    # 기본: Testcontainers 가 PostgreSQL 17 컨테이너를 자동 기동 (jdbc:tc: URL).
+    #   - 로컬에 Docker 만 있으면 되고, smartdesk_test DB 를 미리 만들 필요 없음.
+    #   - 컨테이너는 테스트 JVM 당 1개 재사용, 종료 시 Ryuk 이 정리.
+    # 로컬 PostgreSQL 을 쓰려면 네 값을 모두 오버라이드:
+    #   TEST_DB_URL=jdbc:postgresql://localhost:5432/smartdesk_test
+    #   TEST_DB_DRIVER=org.postgresql.Driver  TEST_DB_USERNAME=smartdesk  TEST_DB_PASSWORD=smartdesk
+    url: ${TEST_DB_URL:jdbc:tc:postgresql:17-alpine:///smartdesk_test}
+    driver-class-name: ${TEST_DB_DRIVER:org.testcontainers.jdbc.ContainerDatabaseDriver}
+    username: ${TEST_DB_USERNAME:test}
+    password: ${TEST_DB_PASSWORD:test}
   jpa:
     hibernate:
       ddl-auto: none

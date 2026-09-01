@@ -182,14 +182,19 @@ CLOSED → IN_PROGRESS(재오픈)
 
 ## 4. 테스트
 
-로컬 PostgreSQL 의 `smartdesk_test` DB + Flyway 시드 사용 (각 테스트 트랜잭션 롤백).
+DB 는 **Testcontainers** 가 PostgreSQL 17 컨테이너를 자동 기동 (`application-test.yml` 의 `jdbc:tc:` URL).
+Docker 만 실행 중이면 되고, 시드는 Flyway 가 넣습니다. 각 통합 테스트는 트랜잭션 롤백으로 격리.
 ```bash
-psql -d postgres -c "CREATE DATABASE smartdesk_test OWNER smartdesk;"
 cd backend && JAVA_HOME=$(/usr/libexec/java_home -v 21) mvn test
 ```
-| 테스트 | 검증 |
-|---|---|
-총 65개. 로컬 PostgreSQL 필요 (`smartdesk_test` DB).
+로컬 PostgreSQL 을 대신 쓰려면 (컨테이너 없이):
+```bash
+psql -d postgres -c "CREATE DATABASE smartdesk_test OWNER smartdesk;"
+TEST_DB_URL=jdbc:postgresql://localhost:5432/smartdesk_test TEST_DB_DRIVER=org.postgresql.Driver \
+  TEST_DB_USERNAME=smartdesk TEST_DB_PASSWORD=smartdesk \
+  JAVA_HOME=$(/usr/libexec/java_home -v 21) mvn test
+```
+총 75개.
 
 | 테스트 | 검증 |
 |---|---|
@@ -249,7 +254,7 @@ docker compose --profile app up --build
 
 ### CI
 [.github/workflows/ci.yml](.github/workflows/ci.yml) — PR/main push 시:
-- backend: postgres 서비스 컨테이너 + `mvn verify` + 이미지 빌드
+- backend: `mvn verify` (DB 는 Testcontainers) + 이미지 빌드
 - frontend: `npm run lint` (eslint + prettier) + `npm run build` + 이미지 빌드
 
 ## 7. 확장 이전 남은 작업 (`docs/ROADMAP.md` 참고)

@@ -8,17 +8,7 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_DB: smartdesk_test
-          POSTGRES_USER: smartdesk
-          POSTGRES_PASSWORD: smartdesk
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U smartdesk"
-          --health-interval 5s --health-timeout 3s --health-retries 10
+    # DB 는 Testcontainers 가 기동 (application-test.yml 의 jdbc:tc: URL). ubuntu-latest 러너에 Docker 포함.
     defaults:
       run:
         working-directory: backend
