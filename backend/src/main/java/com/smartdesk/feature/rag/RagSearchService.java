@@ -44,6 +44,27 @@ public class RagSearchService {
         return props.isEnabled() && store.count("DOCUMENT") + store.count("TICKET") > 0;
     }
 
+    public boolean hasTicketIndex() {
+        return props.isEnabled() && store.count("TICKET") > 0;
+    }
+
+    /**
+     * 단계 3: 트리아지용 — 유사 종료 티켓 (테넌시 필터 없음, SI 내부 처리).
+     * ticketId <= 0 이면 (아직 저장 전) 자기 제외 없이 검색.
+     */
+    public List<Result> similarClosedTickets(String title, String content, long excludeTicketId, int k) {
+        String query = TextChunker.stripHtml((title == null ? "" : title) + ". "
+                + (content == null ? "" : content));
+        float[] qvec = embedder.embedQuery(query);
+        List<Result> out = new ArrayList<>(fuseHits(
+                store.searchTickets(qvec, null, Math.max(excludeTicketId, 0), k * 3),
+                store.bm25Tickets(query, null, Math.max(excludeTicketId, 0), k * 3), k).stream()
+                .map(h -> new Result(h.sourceId(), null, snippet(h.content()), h.score()))
+                .toList());
+        hydrateTicketTitles(out);
+        return out;
+    }
+
     /** 티켓 기준 유사 문서·티켓 추천. */
     public Related relatedForTicket(AuthPrincipal principal, Ticket t) {
         Long clientId = principal.isClientUser() ? principal.clientId() : null;

@@ -88,6 +88,12 @@ smartdesk:
       "[Billing and Payments]": Purchase
       "[Sales and Pre-Sales]": Purchase
       "[Returns and Exchanges]": Purchase
+  triage:
+    # 단계 3: 지능형 트리아지. 신규 티켓에 카테고리·우선순위·(신뢰도 충분 시)담당자 자동.
+    auto-assign: ${TRIAGE_AUTO_ASSIGN:true}
+    min-confidence: 0.7
+    use-llm: true               # smartdesk.rag.llm 설정을 공유 (provider=none 이면 자동 미사용)
+    sla-risk-threshold: 0.7     # SLA 위반 위험 알림 임계 (SlaMonitor 8시간 관찰창)
   rag:
     # 단계 2: 벡터 검색 + RAG 초안. true 로 켜면 analytics/service(/embed) 필요.
     enabled: ${RAG_ENABLED:false}

@@ -34,12 +34,14 @@ public final class Enums {
     public enum TicketEventType {
         CREATED, CATEGORIZED, ASSIGNED, STATUS_CHANGED, COMMENTED, SLA_BREACHED,
         APPROVED,   // 승인자(관리자)가 해결 → 종료 승인
-        REJECTED    // 승인자가 반려 → 처리중으로 되돌림
+        REJECTED,   // 승인자가 반려 → 처리중으로 되돌림
+        TRIAGED     // 단계 3: 지능형 트리아지 결과 기록
     }
 
     /** 알림 유형. */
     public enum NotificationType {
-        SLA_DUE_SOON, SLA_BREACHED, TICKET_ASSIGNED, TICKET_COMMENTED, TICKET_STATUS
+        SLA_DUE_SOON, SLA_BREACHED, SLA_AT_RISK, TICKET_ASSIGNED, TICKET_COMMENTED, TICKET_STATUS,
+        TRIAGE_REVIEW   // 단계 3: 트리아지 신뢰도 낮음 → 관리자 수동 검토 요청
     }
 
     public enum AttachmentOwnerType { TICKET, DOCUMENT }

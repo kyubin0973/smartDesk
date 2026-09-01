@@ -20,6 +20,9 @@ const newComment = ref('')
 const error = ref('')
 const draft = ref(null)
 const draftBusy = ref(false)
+const triageResult = ref(null)
+const triageBusy = ref(false)
+const slaRisk = ref(null)
 
 const STATUSES = ['RECEIVED', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']
 const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
@@ -39,6 +42,22 @@ async function load() {
   if (auth.isSiUser) {
     categories.value = await api('/categories')
     staff.value = await api('/users')
+    slaRisk.value = await api(`/tickets/${id}/sla-risk`).catch(() => null)
+  }
+}
+
+async function runTriage(apply) {
+  triageBusy.value = true
+  error.value = ''
+  try {
+    triageResult.value = await api(`/tickets/${id}/triage${apply ? '/apply' : ''}`, {
+      method: 'POST',
+    })
+    if (apply) await load()
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    triageBusy.value = false
   }
 }
 onMounted(() => load().catch((e) => (error.value = e.message)))
@@ -309,6 +328,79 @@ const timeline = computed(() => {
               </select>
               <button class="secondary sm" @click="autoAssign">자동</button>
             </div>
+          </div>
+        </div>
+
+        <div v-if="auth.isSiUser" class="card">
+          <div class="row spread">
+            <h3 class="card__title" style="margin: 0">
+              AI 트리아지 <span class="muted">(단계 3)</span>
+            </h3>
+            <button class="secondary sm" :disabled="triageBusy" @click="runTriage(false)">
+              {{ triageBusy ? '분석 중…' : '트리아지 실행' }}
+            </button>
+          </div>
+
+          <div v-if="slaRisk && slaRisk.level !== 'LOW'" style="margin-top: 8px">
+            <span class="badge" :class="slaRisk.level === 'HIGH' ? 'red' : 'amber'">
+              SLA 위험 {{ Math.round(slaRisk.score * 100) }}%
+            </span>
+            <span v-if="slaRisk.suggestReassign" class="muted" style="font-size: 12px">
+              · 재배정 검토 권장</span
+            >
+            <ul class="muted" style="font-size: 12px; margin: 4px 0 0; padding-left: 16px">
+              <li v-for="(f, i) in slaRisk.factors" :key="i">{{ f }}</li>
+            </ul>
+          </div>
+
+          <div v-if="triageResult" style="margin-top: 12px">
+            <div class="row" style="gap: 6px; flex-wrap: wrap">
+              <span class="badge gray">카테고리: {{ triageResult.categoryName || '미정' }}</span>
+              <span class="badge" :class="priorityLabel(triageResult.priority).tone">
+                {{ priorityLabel(triageResult.priority).label }}
+                <span style="opacity: 0.7">({{ triageResult.prioritySource }})</span>
+              </span>
+              <span
+                class="badge"
+                :class="triageResult.confidence >= 0.7 ? 'green' : 'amber'"
+                :title="'신뢰도'"
+              >
+                신뢰도 {{ Math.round(triageResult.confidence * 100) }}%
+              </span>
+            </div>
+            <p style="font-size: 13px; margin: 8px 0 0">
+              <strong>담당자 제안:</strong>
+              {{ triageResult.suggestedAssigneeName || '후보 없음' }}
+              <span class="muted"> — {{ triageResult.assigneeRationale }}</span>
+            </p>
+            <p v-if="triageResult.escalate" class="muted" style="font-size: 12px; margin: 4px 0 0">
+              ⚠ 신뢰도가 낮아 담당자 자동 배정은 보류됩니다.
+            </p>
+            <p v-if="triageResult.llmNote" style="font-size: 12px; margin: 6px 0 0">
+              💬 {{ triageResult.llmNote }}
+            </p>
+            <div
+              v-if="triageResult.similar && triageResult.similar.length"
+              class="muted"
+              style="font-size: 12px; margin: 6px 0 0"
+            >
+              유사 과거 티켓:
+              <RouterLink
+                v-for="s in triageResult.similar"
+                :key="s.ticketId"
+                :to="`/tickets/${s.ticketId}`"
+                style="margin-right: 8px"
+                >#{{ s.ticketId }} ({{ s.priority }})</RouterLink
+              >
+            </div>
+            <button
+              class="sm"
+              style="margin-top: 10px"
+              :disabled="triageBusy"
+              @click="runTriage(true)"
+            >
+              결과 적용
+            </button>
           </div>
         </div>
 

@@ -42,31 +42,46 @@ public class AssignmentService {
     }
 
     public Optional<Long> autoAssign(Ticket ticket) {
-        List<Long> clientUserIds = assignedClients.findUserIdsByClientId(ticket.getClientId());
-        Long deptId = ticket.getCategoryId() == null ? null
-                : routing.findById(ticket.getCategoryId()).map(r -> r.getDepartmentId()).orElse(null);
-
-        List<AppUser> candidates = users.findAllById(clientUserIds).stream()
-                .filter(AppUser::isActive)
-                .filter(u -> u.getRole() == Role.AGENT)
-                .filter(u -> deptId == null || deptId.equals(u.getDepartmentId()))
-                .toList();
-
-        if (candidates.isEmpty() && deptId != null) {
-            // 고객사 담당 지정이 없으면 부서 전체 활성 AGENT 로 확장
-            candidates = users.findByRoleAndDepartmentIdAndActiveTrue(Role.AGENT, deptId);
-        }
+        List<AppUser> candidates = candidates(ticket);
         if (candidates.isEmpty()) {
-            // 그래도 없으면 고객사 담당 직원 아무나
-            candidates = users.findAllById(clientUserIds).stream().filter(AppUser::isActive).toList();
-        }
-        if (candidates.isEmpty() && deptId != null) {
-            return users.findByRoleAndDepartmentIdAndActiveTrue(Role.MANAGER, deptId).stream()
-                    .findFirst().map(AppUser::getId);
+            Long deptId = deptFor(ticket);
+            if (deptId != null) {
+                return users.findByRoleAndDepartmentIdAndActiveTrue(Role.MANAGER, deptId).stream()
+                        .findFirst().map(AppUser::getId);
+            }
+            return Optional.empty();
         }
         return candidates.stream()
                 .min(Comparator.comparingLong(u -> openTicketCount(u.getId())))
                 .map(AppUser::getId);
+    }
+
+    /** 배정 후보 (좁은 것부터 넓게). 단계 3 AssigneeScorer 가 스코어링에 사용. */
+    public List<AppUser> candidates(Ticket ticket) {
+        List<Long> clientUserIds = assignedClients.findUserIdsByClientId(ticket.getClientId());
+        Long deptId = deptFor(ticket);
+
+        List<AppUser> c = users.findAllById(clientUserIds).stream()
+                .filter(AppUser::isActive)
+                .filter(u -> u.getRole() == Role.AGENT)
+                .filter(u -> deptId == null || deptId.equals(u.getDepartmentId()))
+                .toList();
+        if (c.isEmpty() && deptId != null) {
+            c = users.findByRoleAndDepartmentIdAndActiveTrue(Role.AGENT, deptId);
+        }
+        if (c.isEmpty()) {
+            c = users.findAllById(clientUserIds).stream().filter(AppUser::isActive).toList();
+        }
+        return c;
+    }
+
+    public long openLoad(Long userId) {
+        return openTicketCount(userId);
+    }
+
+    private Long deptFor(Ticket ticket) {
+        return ticket.getCategoryId() == null ? null
+                : routing.findById(ticket.getCategoryId()).map(r -> r.getDepartmentId()).orElse(null);
     }
 
     public Optional<Long> reassignTarget(Long leavingUserId) {

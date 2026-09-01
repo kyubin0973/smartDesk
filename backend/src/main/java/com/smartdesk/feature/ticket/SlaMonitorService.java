@@ -34,17 +34,22 @@ public class SlaMonitorService {
 
     private static final Logger log = LoggerFactory.getLogger(SlaMonitorService.class);
     static final Duration DUE_SOON = Duration.ofHours(2);
+    static final Duration RISK_HORIZON = Duration.ofHours(8);   // 단계 3.2: 위반 예측 관찰 창
 
     private final TicketRepo tickets;
     private final AppUserRepo users;
     private final CategoryRoutingRepo routing;
     private final NotificationService notifications;
     private final TicketEventService events;
+    private final com.smartdesk.feature.triage.SlaRiskService slaRisk;
+    private final com.smartdesk.feature.triage.TriageProperties triageProps;
     private final Duration l2After;
     private final Duration l3After;
 
     public SlaMonitorService(TicketRepo tickets, AppUserRepo users, CategoryRoutingRepo routing,
                              NotificationService notifications, TicketEventService events,
+                             com.smartdesk.feature.triage.SlaRiskService slaRisk,
+                             com.smartdesk.feature.triage.TriageProperties triageProps,
                              @Value("${smartdesk.sla.escalation-l2-minutes:60}") long l2Minutes,
                              @Value("${smartdesk.sla.escalation-l3-minutes:240}") long l3Minutes) {
         this.tickets = tickets;
@@ -52,27 +57,46 @@ public class SlaMonitorService {
         this.routing = routing;
         this.notifications = notifications;
         this.events = events;
+        this.slaRisk = slaRisk;
+        this.triageProps = triageProps;
         this.l2After = Duration.ofMinutes(l2Minutes);
         this.l3After = Duration.ofMinutes(l3Minutes);
     }
 
-    /** @return [breached, dueSoon] 처리 건수 */
+    /** @return [breached, dueSoon, atRisk] 처리 건수 */
     public int[] scan() {
         Instant now = Instant.now();
-        List<Ticket> atRisk = tickets.findByStatusInAndSlaDueAtIsNotNullAndSlaDueAtBefore(
+        List<Ticket> horizon = tickets.findByStatusInAndSlaDueAtIsNotNullAndSlaDueAtBefore(
                 List.of(TicketStatus.RECEIVED, TicketStatus.IN_PROGRESS),
-                now.plus(DUE_SOON));
-        int breached = 0, soon = 0;
-        for (Ticket t : atRisk) {
+                now.plus(RISK_HORIZON));
+        int breached = 0, soon = 0, risky = 0;
+        for (Ticket t : horizon) {
             try {
                 if (t.getSlaDueAt().isBefore(now)) { handleBreached(t, now); breached++; }
-                else { handleDueSoon(t); soon++; }
+                else if (t.getSlaDueAt().isBefore(now.plus(DUE_SOON))) { handleDueSoon(t); soon++; }
+                else if (handleAtRisk(t)) { risky++; }
             } catch (Exception e) {
                 log.warn("[sla-monitor] 티켓 #{} 처리 중 오류: {}", t.getId(), e.toString());
             }
         }
-        if (breached + soon > 0) log.info("[sla-monitor] breached={} dueSoon={}", breached, soon);
-        return new int[]{breached, soon};
+        if (breached + soon + risky > 0) {
+            log.info("[sla-monitor] breached={} dueSoon={} atRisk={}", breached, soon, risky);
+        }
+        return new int[]{breached, soon, risky};
+    }
+
+    /** 단계 3.2: 아직 임박 전이지만 위반 위험이 높은 티켓 → 담당자·관리자에게 사전 경고. */
+    private boolean handleAtRisk(Ticket t) {
+        var risk = slaRisk.assess(t);
+        if (risk.score() < triageProps.getSlaRiskThreshold()) return false;
+        String body = t.getTitle() + " — SLA 위반 위험 " + Math.round(risk.score() * 100) + "%"
+                + (risk.factors().isEmpty() ? "" : " (" + String.join(", ", risk.factors()) + ")")
+                + (risk.suggestReassign() ? " · 재배정 검토 권장" : "");
+        for (Long uid : risk.suggestReassign() ? breachRecipients(t, 2) : baseRecipients(t)) {
+            notifications.notifyUser(uid, NotificationType.SLA_AT_RISK,
+                    "SLA 위험: #" + t.getId(), body, t.getId());
+        }
+        return true;
     }
 
     private void handleBreached(Ticket t, Instant now) {

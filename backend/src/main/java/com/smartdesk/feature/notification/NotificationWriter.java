@@ -25,7 +25,8 @@ class NotificationWriter {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     boolean persist(String recipientType, Long recipientId, NotificationType type,
                     String title, String body, Long ticketId) {
-        if ((type == NotificationType.SLA_DUE_SOON || type == NotificationType.SLA_BREACHED)
+        if ((type == NotificationType.SLA_DUE_SOON || type == NotificationType.SLA_BREACHED
+                || type == NotificationType.SLA_AT_RISK)
                 && ticketId != null
                 && repo.existsByRecipientTypeAndRecipientIdAndTypeAndTicketId(recipientType, recipientId, type, ticketId)) {
             return false;
