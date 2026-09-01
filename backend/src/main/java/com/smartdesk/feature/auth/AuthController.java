@@ -1,14 +1,20 @@
 package com.smartdesk.feature.auth;
 
+import com.smartdesk.common.ApiException;
+import com.smartdesk.domain.RefreshToken;
+import com.smartdesk.repo.RefreshTokenRepo;
 import com.smartdesk.security.CurrentUser;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /** REQ-F-001 / REQ-F-002 / REQ-E-009 / C9(비밀번호 재설정·변경). */
@@ -18,10 +24,12 @@ public class AuthController {
 
     private final AuthService auth;
     private final PasswordService passwords;
+    private final RefreshTokenRepo refreshTokens;
 
-    public AuthController(AuthService auth, PasswordService passwords) {
+    public AuthController(AuthService auth, PasswordService passwords, RefreshTokenRepo refreshTokens) {
         this.auth = auth;
         this.passwords = passwords;
+        this.refreshTokens = refreshTokens;
     }
 
     public record LoginRequest(@Email @NotBlank String email, @NotBlank String password) {}
@@ -72,6 +80,38 @@ public class AuthController {
     @PostMapping("/change-password")
     public ResponseEntity<Void> changePassword(@RequestBody @Valid ChangePasswordRequest req) {
         passwords.change(CurrentUser.get(), req.currentPassword(), req.newPassword());
+        return ResponseEntity.noContent().build();
+    }
+
+    // 0.5-g: 세션(리프레시 토큰) 관리
+    public record SessionView(Long id, Instant createdAt, Instant expiresAt, boolean revoked) {}
+
+    @GetMapping("/sessions")
+    public List<SessionView> sessions() {
+        var p = CurrentUser.get();
+        return refreshTokens.findByPrincipalTypeAndPrincipalIdOrderByCreatedAtDesc(p.type().name(), p.id()).stream()
+                .map(rt -> new SessionView(rt.getId(), rt.getCreatedAt(), rt.getExpiresAt(), rt.isRevoked()))
+                .toList();
+    }
+
+    @DeleteMapping("/sessions/{id}")
+    @Transactional
+    public ResponseEntity<Void> revokeSession(@PathVariable Long id) {
+        var p = CurrentUser.get();
+        RefreshToken rt = refreshTokens.findById(id).orElseThrow(() -> ApiException.notFound("세션"));
+        if (!rt.getPrincipalType().equals(p.type().name()) || !rt.getPrincipalId().equals(p.id())) {
+            throw ApiException.forbidden("본인 세션이 아닙니다.");
+        }
+        rt.setRevoked(true);
+        refreshTokens.save(rt);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** 모든 세션 로그아웃 (다른 기기 포함). 현재 액세스 토큰도 폐기. */
+    @DeleteMapping("/sessions")
+    public ResponseEntity<Void> revokeAllSessions(@RequestBody(required = false) RefreshRequest req) {
+        var p = CurrentUser.get();
+        auth.revokeAllSessions(p);
         return ResponseEntity.noContent().build();
     }
 

@@ -44,17 +44,21 @@ class SlaEscalationTest {
     }
 
     private Ticket newBreachedUnassignedTicket() {
+        return newBreachedTicket(null, 1);
+    }
+
+    private Ticket newBreachedTicket(Long assigneeId, int hoursOverdue) {
         Ticket t = new Ticket();
         t.setClientId(1L);
         t.setContractId(1L);
         t.setRequesterId(1L);
-        t.setCategoryId(2L);           // Access → 보안팀(dept 3), 관리자 없음 → 전체 관리자로 폴백
-        t.setAssigneeId(null);         // 미배정
+        t.setCategoryId(2L);           // Access → 보안팀(dept 3), 관리자 없음
+        t.setAssigneeId(assigneeId);
         t.setTitle("SLA 에스컬레이션 테스트");
         t.setContent("x");
         t.setPriority(Priority.HIGH);
         t.setStatus(TicketStatus.RECEIVED);
-        t.setSlaDueAt(Instant.now().minus(1, ChronoUnit.HOURS));  // 이미 초과
+        t.setSlaDueAt(Instant.now().minus(hoursOverdue, ChronoUnit.HOURS));
         return tickets.save(t);
     }
 
@@ -84,5 +88,22 @@ class SlaEscalationTest {
                 .filter(e -> e.getType() == TicketEventType.SLA_BREACHED).count();
         assertEquals(mine.size(), notifCount, "재스캔해도 알림 중복 없음");
         assertEquals(1, eventCount, "재스캔해도 이벤트 중복 없음");
+    }
+
+    /** 0.5-h: 5시간 초과(L3)면 담당자 외에 전체 관리자에게도 확대 알림. */
+    @Test
+    void longOverdueBreach_escalatesToAllManagers() {
+        ticketId = newBreachedTicket(2L /* infra 담당 */, 5).getId();
+
+        slaMonitor.scan();
+
+        List<Notification> breach = notifications.findAll().stream()
+                .filter(n -> ticketId.equals(n.getTicketId()) && n.getType() == NotificationType.SLA_BREACHED)
+                .toList();
+        assertTrue(breach.stream().anyMatch(n -> n.getRecipientId() == 2L), "담당자에게 알림");
+        assertTrue(breach.stream().anyMatch(n -> n.getRecipientId() == 1L),
+                "L3 에스컬레이션 — 관리자(admin)에게도 확대 알림");
+        assertTrue(breach.stream().anyMatch(n -> n.getBody().contains("에스컬레이션 L3")),
+                "본문에 에스컬레이션 레벨 표기");
     }
 }

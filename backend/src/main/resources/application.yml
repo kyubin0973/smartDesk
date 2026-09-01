@@ -50,6 +50,8 @@ smartdesk:
     business-day-start: 9
     business-day-end: 18
     monitor-interval-ms: 300000   # SLA 임박/초과 스캔 주기 (5분)
+    escalation-l2-minutes: 60      # 초과 1시간 → 부서 관리자에게 확대
+    escalation-l3-minutes: 240     # 초과 4시간 → 전체 관리자에게 확대
   contract:
     status-cron: "0 10 0 * * *"   # 계약 상태 전이 (매일 00:10 UTC)
   password:

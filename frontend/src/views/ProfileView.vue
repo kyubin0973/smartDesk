@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { api } from '../api/http'
 import ChangePasswordCard from '../components/ChangePasswordCard.vue'
+import SessionsCard from '../components/SessionsCard.vue'
 
 const me = ref(null)
 const departments = ref([])
@@ -66,4 +67,5 @@ async function save() {
   </div>
 
   <ChangePasswordCard style="margin-top: 16px" />
+  <SessionsCard style="margin-top: 16px" />
 </template>

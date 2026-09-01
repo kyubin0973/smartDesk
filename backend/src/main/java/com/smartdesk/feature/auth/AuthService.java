@@ -105,6 +105,17 @@ public class AuthService {
         return issue(p, view, rt.getPrincipalType(), rt.getPrincipalId());
     }
 
+    /** 0.5-g: 모든 세션 종료 (다른 기기 포함) + 현재 액세스 토큰 폐기. */
+    @Transactional
+    public void revokeAllSessions(AuthPrincipal current) {
+        refreshTokens.revokeAllFor(current.type().name(), current.id());
+        if (current.jti() != null && current.expiresAt() != null) {
+            revokedTokens.save(new RevokedAccessToken(current.jti(), current.expiresAt()));
+            revocationRegistry.add(current.jti());
+        }
+        audit.recordAuth("SESSIONS_REVOKED_ALL", current.type().name(), current.id(), current.email(), null, null);
+    }
+
     @Transactional
     public void logout(AuthPrincipal current, String rawRefresh) {
         if (current != null) {

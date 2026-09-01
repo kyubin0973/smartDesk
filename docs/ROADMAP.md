@@ -28,16 +28,16 @@
 
 ## 단계 0.5 — 빠른 개선 (각 1~3일, 단계 1 병행 가능)
 
-| # | 작업 | 근거 |
-|---|---|---|
-| a | **알림 채널 어댑터** — `EmailSender`(SMTP/SES) + Slack Webhook 구현. `NotificationService` 의 TODO 지점 | REQ-F-011 초과 알림, 현재 인앱만 |
-| b | **실시간 알림** — 폴링(30초) → SSE `/api/notifications/stream` | UX, 서버 부하 |
-| c | **리치텍스트 에디터** — 문서 본문 `textarea` → TipTap/Toast UI (HTML 저장, 서버 sanitize) | 화면설계서 SCR-DOC-002 "리치텍스트 입력" |
-| d | **감사 리포트 내보내기** — `/audit` CSV/PDF export, SLA 준수율 리포트 화면 | REQ 리포트 대분류, 감사 대응 |
-| e | **문서 열람 감사** — CLIENT_SHARED 문서 조회 시 `audit_log` 기록 (`DOCUMENT_VIEWED`) | REQ-F-014 컴플라이언스 |
-| f | **Testcontainers** — 통합 테스트가 로컬 PostgreSQL 의존 → 컨테이너 자동 기동 | 개발 편의, CI 안정성 |
-| g | **세션 관리 화면** — "내 로그인 세션" 목록 + 개별 로그아웃 (`refresh_token` 활용) | 보안, 이미 데이터는 있음 |
-| h | **SLA 다단계 에스컬레이션** — 시간 경과별(30분→팀장, 1시간→부서장) 알림 체인 | 현재 담당자→관리자 1단계 |
+| # | 작업 | 상태 | 근거 |
+|---|---|---|---|
+| a | **알림 채널 어댑터** — `EmailSender`(SMTP) + Slack Webhook. 유형별 `email-types`/`slack-types` 설정 | ✅ | REQ-F-011 초과 알림, 현재 인앱만 |
+| e | **문서 열람 감사** — CLIENT_SHARED 문서 조회 시 `audit_log` 기록 (`DOCUMENT_VIEWED`, SI 제외) | ✅ | REQ-F-014 컴플라이언스 |
+| g | **세션 관리 화면** — "내 로그인 세션" 목록 + 개별/전체 로그아웃 (`refresh_token` 활용) | ✅ `/auth/sessions`, `SessionsCard` | 보안, 이미 데이터는 있음 |
+| h | **SLA 다단계 에스컬레이션** — 초과 시간별 L1 담당자 → L2 부서관리자 → L3 전체관리자 | ✅ `escalation-l2/l3-minutes` | 현재 담당자→관리자 1단계 |
+| f | **Testcontainers** — 통합 테스트가 로컬 PostgreSQL 의존 → 컨테이너 자동 기동 | 다음 | 개발 편의, CI 안정성 |
+| c | **리치텍스트 에디터** — 문서 본문 `textarea` → TipTap/Toast UI (HTML 저장, 서버 sanitize) | 다음 | 화면설계서 SCR-DOC-002 "리치텍스트 입력" |
+| b | **실시간 알림** — 폴링(30초) → SSE `/api/notifications/stream` | 대기 | UX, 서버 부하 |
+| d | **감사 리포트 내보내기** — `/audit` CSV/PDF export, SLA 준수율 리포트 화면 | 대기 | REQ 리포트 대분류, 감사 대응 |
 
 ---
 

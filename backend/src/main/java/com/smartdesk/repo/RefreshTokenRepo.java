@@ -7,10 +7,12 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 public interface RefreshTokenRepo extends JpaRepository<RefreshToken, Long> {
     Optional<RefreshToken> findByTokenHash(String tokenHash);
+    List<RefreshToken> findByPrincipalTypeAndPrincipalIdOrderByCreatedAtDesc(String principalType, Long principalId);
 
     /** 원자적 회전: 아직 유효할 때만 폐기. @return 영향 행 수 (1이면 이 요청이 회전 승자). */
     @Modifying(flushAutomatically = true, clearAutomatically = true)

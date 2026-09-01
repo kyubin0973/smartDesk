@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { api } from '../api/http'
 import { ticketStatus, slaView } from '../labels'
 import ChangePasswordCard from '../components/ChangePasswordCard.vue'
+import SessionsCard from '../components/SessionsCard.vue'
 
 const router = useRouter()
 const tickets = ref([])
@@ -86,5 +87,6 @@ const count = (s) => tickets.value.filter((t) => t.status === s).length
     </div>
 
     <ChangePasswordCard style="margin-top: 16px" />
+    <SessionsCard style="margin-top: 16px" />
   </div>
 </template>
