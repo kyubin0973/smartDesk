@@ -15,7 +15,9 @@ services:
       timeout: 3s
       retries: 10
 
-  # 전체 스택 실행: docker compose --profile app up --build
+  # 웹 스택만: docker compose --profile app up --build
+  # AI 포함:  docker compose --profile app --profile ml up --build
+  #           (+ 아래 backend 의 CLASSIFICATION_PROVIDER / RAG_ENABLED 를 켜서 ml 서비스와 연동)
   backend:
     profiles: ["app"]
     build: ./backend
@@ -26,6 +28,13 @@ services:
       JWT_SECRET: ${JWT_SECRET:-c21hcnRkZXNrLWRldi1zZWNyZXQta2V5LWNoYW5nZS1tZS0zMi1ieXRlcw==}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-}
       ATTACHMENT_DIR: /app/var/attachments
+      # 단계 1·2 AI 연동 (ml 서비스 필요). 기본 off — 켜려면 host env 로 오버라이드.
+      CLASSIFICATION_PROVIDER: ${CLASSIFICATION_PROVIDER:-rule}
+      CLASSIFICATION_ML_URL: http://ml:8000
+      RAG_ENABLED: ${RAG_ENABLED:-false}
+      RAG_EMBED_URL: http://ml:8000
+      RAG_LLM_PROVIDER: ${RAG_LLM_PROVIDER:-none}
+      RAG_LLM_API_KEY: ${ANTHROPIC_API_KEY:-}
     volumes:
       - smartdesk_attachments:/app/var/attachments
     depends_on:
@@ -42,10 +51,10 @@ services:
     ports:
       - "5173:80"
 
-  # 단계 1: 티켓 분류 서빙. docker compose --profile ml up --build ml
-  # (빌드 중 데이터셋 다운로드 + 모델 학습). backend 는 CLASSIFICATION_PROVIDER=ml 로 연동.
+  # 단계 1·2: 분류 + 임베딩 서빙. `--profile ml` 로만 기동 (app 프로파일엔 미포함 — 빌드가 무겁다).
+  # 빌드 중 데이터셋 다운로드 + 분류 모델 학습 + 임베딩 모델 프리페치.
   ml:
-    profiles: ["ml", "app"]
+    profiles: ["ml"]
     build:
       context: ./analytics
       dockerfile: service/Dockerfile

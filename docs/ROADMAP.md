@@ -100,7 +100,7 @@
 
 **활성화:** `smartdesk.rag.enabled=true` + analytics/service 기동. 초안은 `RAG_LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY`.
 
-**한계·다음:** e5-small 은 짧은 한국어에서 절대 유사도가 압축돼 있어 랭킹 위주로 사용 (재순위 모델로 개선 여지). 색인은 단일 인스턴스 가정 — 다중 인스턴스는 outbox 테이블로.
+**한계·다음:** e5-small 은 짧은 한국어에서 절대 유사도가 압축돼 있어 랭킹 위주로 사용 (재순위 모델로 개선 여지). 동시 색인은 `pg_advisory_xact_lock` 으로 직렬화(다중 인스턴스 안전) — 다만 이벤트 유실 대비는 여전히 10분 재조정에 의존, 대량이면 outbox 테이블 권장.
 
 **연결점:** REQ-F-013(지식문서)·REQ-F-015(검색) 의미 검색화
 

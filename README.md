@@ -265,11 +265,14 @@ make serve                                           # FastAPI :8000 — POST /c
 
 ### 컨테이너로 전체 스택 실행
 ```bash
-docker compose --profile app up --build
-# frontend :5173(→nginx:80) · backend :8080 · db :5432
+docker compose --profile app up --build                       # 웹 스택 (db + backend + frontend)
+docker compose --profile app --profile ml up --build          # + AI 서빙(ml, :8000)
+# AI 연동을 켜려면: CLASSIFICATION_PROVIDER=ml RAG_ENABLED=true [ANTHROPIC_API_KEY=...] docker compose --profile app --profile ml up
+# frontend :5173(→nginx:80) · backend :8080 · db :5432 · ml :8000
 ```
 - `backend/Dockerfile` — maven(JDK21) 빌드 → JRE21-alpine 런타임, non-root, HEALTHCHECK
 - `frontend/Dockerfile` — node 빌드 → nginx (SPA fallback + `/api` → `backend:8080` 프록시)
+- `analytics/service/Dockerfile` — 빌드 시 분류 모델 학습 + 임베딩 모델 프리페치(CPU torch). 런타임 오프라인 동작. `ml` 프로파일 전용(빌드가 무겁다)
 
 ### 운영 프로파일
 `SPRING_PROFILES_ACTIVE=prod` + [application-prod.yml](backend/src/main/resources/application-prod.yml). 필수 환경변수:

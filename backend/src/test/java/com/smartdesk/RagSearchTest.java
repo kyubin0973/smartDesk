@@ -7,6 +7,7 @@ import com.smartdesk.domain.Enums.DocScope;
 import com.smartdesk.domain.Enums.TicketStatus;
 import com.smartdesk.domain.Ticket;
 import com.smartdesk.feature.rag.EmbeddingClient;
+import com.smartdesk.feature.rag.EmbeddingStore;
 import com.smartdesk.feature.rag.IndexingService;
 import com.smartdesk.repo.DocumentRepo;
 import com.smartdesk.repo.DocumentShareRepo;
@@ -32,6 +33,7 @@ class RagSearchTest extends AbstractIntegrationTest {
 
     @MockBean EmbeddingClient embedder;
     @Autowired IndexingService indexing;
+    @Autowired EmbeddingStore store;
     @Autowired DocumentRepo documents;
     @Autowired DocumentShareRepo shares;
     @Autowired TicketRepo tickets;
@@ -160,6 +162,31 @@ class RagSearchTest extends AbstractIntegrationTest {
         mvc.perform(post("/api/ai/tickets/" + queryTicketId + "/answer-draft")
                         .header("Authorization", "Bearer " + clientAToken))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void answerDraft_embedServiceDown_returns503_not500() throws Exception {
+        when(embedder.embedQuery(org.mockito.ArgumentMatchers.anyString()))
+                .thenThrow(new RuntimeException("connection refused"));
+        mvc.perform(post("/api/ai/tickets/" + queryTicketId + "/answer-draft")
+                        .header("Authorization", "Bearer " + siToken))
+                .andExpect(status().isServiceUnavailable());
+    }
+
+    @Test
+    void reindex_replacesChunks_whenContentChanges() {
+        var d = documents.findById(vpnDocId).orElseThrow();
+        d.setContent("완전히 다른 내용으로 교체 " + "가".repeat(1500));
+        d.setUpdatedAt(Instant.now());
+        documents.save(d);
+
+        long before = store.count("DOCUMENT");
+        indexing.indexDocument(vpnDocId);          // 재색인 (락 + DELETE + INSERT)
+        long after = store.count("DOCUMENT");
+        assertNotEquals(before, after, "긴 새 내용 → 청크 수가 달라져야 함");
+        // 다시 호출해도 멱등 (해시 동일 → no-op)
+        indexing.indexDocument(vpnDocId);
+        assertEquals(after, store.count("DOCUMENT"));
     }
 
     private static List<Long> ids(JsonNode arr) {

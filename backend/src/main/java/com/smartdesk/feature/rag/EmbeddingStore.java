@@ -2,6 +2,7 @@ package com.smartdesk.feature.rag;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -33,8 +34,11 @@ public class EmbeddingStore {
         return n != null && n > 0;
     }
 
+    /** 한 원본의 청크 전체 교체 (DELETE + INSERT). advisory 락으로 동일 원본 동시 색인 직렬화. */
+    @Transactional
     public void replace(String sourceType, long sourceId, String hash, String model, List<String> chunks,
                         List<float[]> vectors) {
+        lockSource(sourceType, sourceId);
         jdbc.update("DELETE FROM embedding WHERE source_type = ? AND source_id = ?", sourceType, sourceId);
         for (int i = 0; i < chunks.size(); i++) {
             jdbc.update("""
@@ -44,8 +48,16 @@ public class EmbeddingStore {
         }
     }
 
+    @Transactional
     public void deleteSource(String sourceType, long sourceId) {
+        lockSource(sourceType, sourceId);
         jdbc.update("DELETE FROM embedding WHERE source_type = ? AND source_id = ?", sourceType, sourceId);
+    }
+
+    /** 트랜잭션 종료 시 자동 해제되는 자문 락. 같은 (type, id) 색인 요청을 직렬화. */
+    private void lockSource(String sourceType, long sourceId) {
+        jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))",
+                rs -> null, sourceType + ":" + sourceId);
     }
 
     public long count(String sourceType) {

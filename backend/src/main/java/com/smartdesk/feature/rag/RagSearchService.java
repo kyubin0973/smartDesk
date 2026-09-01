@@ -61,6 +61,8 @@ public class RagSearchService {
             tix = fuse(
                     store.searchTickets(qvec, clientId, t.getId(), k * 3),
                     store.bm25Tickets(query, clientId, t.getId(), k * 3), k);
+        } catch (ApiException e) {
+            throw e;
         } catch (Exception e) {
             throw ApiException.unavailable("RAG_UNAVAILABLE", "임베딩 서비스에 연결할 수 없습니다: " + e.getMessage());
         }
@@ -72,10 +74,16 @@ public class RagSearchService {
     /** RAG 초안용 — 문서 청크만, 원문 스니펫 포함. */
     public List<EmbeddingStore.Hit> documentContext(AuthPrincipal principal, String query, int k) {
         Long clientId = principal.isClientUser() ? principal.clientId() : null;
-        float[] qvec = embedder.embedQuery(TextChunker.stripHtml(query));
-        return fuseHits(
-                store.searchDocuments(qvec, clientId, k * 3),
-                store.bm25Documents(query, clientId, k * 3), k);
+        try {
+            float[] qvec = embedder.embedQuery(TextChunker.stripHtml(query));
+            return fuseHits(
+                    store.searchDocuments(qvec, clientId, k * 3),
+                    store.bm25Documents(query, clientId, k * 3), k);
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            throw ApiException.unavailable("RAG_UNAVAILABLE", "임베딩 서비스에 연결할 수 없습니다: " + e.getMessage());
+        }
     }
 
     // ---------- RRF 융합 ----------
