@@ -8,7 +8,8 @@
 - **단계 1 (데이터 분석) — 완료 ✅** (파이프라인 + EDA/검정 + TF-IDF 분류 모델 + FastAPI 서빙 + 폴백)
 - **단계 2 (RAG 추천) — 완료 ✅** (2.1 pgvector 색인, 2.2 하이브리드 검색 + 테넌시 필터, 2.3 답변 초안)
 - **단계 3 (AI 에이전트) — 완료 ✅** (3.1 지능형 트리아지, 3.2 SLA 위반 예측, 3.3 파이프라인 오케스트레이션 + 회귀 평가셋)
-- **다음 큰 모듈:** 단계 4 (플랫폼화 — RLS, S3, K8s)
+- **단계 4 (플랫폼화) — 핵심 완료 ✅** (RLS 테넌시 이중방어, S3 스토리지 어댑터, ShedLock 분산락, 배포 준비). K8s/Kafka/OTLP 는 배포 규모 확정 후
+- 마이그레이션 V1~V10 · 백엔드 테스트 120개 + 파이썬 4개
 
 ---
 
@@ -136,14 +137,16 @@
 
 ## 단계 4 — 플랫폼화 / 배포
 
-| 영역 | 계획 |
+| 영역 | 상태 |
 |---|---|
-| K8s | Deployment + HPA, Ingress, Secret 은 External Secrets/Vault. Helm 차트 |
-| CI/CD | 현 GitHub Actions 확장: 테스트 → 이미지 → 스테이징 자동 배포 → 승인 → 운영 |
-| 멀티테넌시 심화 | 애플리케이션 레벨 `client_id` 필터 → **PostgreSQL Row-Level Security** 이중 방어. 테넌시 우회 탐지 테스트를 CI 게이트로 |
-| 스토리지 | `AttachmentController` 로컬 디스크 → S3/GCS 어댑터 (다중 인스턴스 필수). MIME 화이트리스트 + 바이러스 스캔 훅 |
-| 이벤트 버스 | `ticket_event` / outbox → Kafka/SQS 발행 → 알림·색인·분석 컨슈머 분리 |
-| 관측성 심화 | 분산 추적(OpenTelemetry), 대시보드(Grafana), 알림 규칙 |
+| 멀티테넌시 심화 | ✅ **PostgreSQL RLS** — `V9`: `smartdesk_app` 비특권 롤 + `FORCE RLS` + `tenant_isolation` 정책(ticket·contract·system_asset·comment·document·document_share). `TenantContext`/`TenantContextFilter`/`RlsDataSource`(문 생성 직전 세션변수 동기화). 크로스테넌트 접근 → 404. `RlsTest` |
+| 스토리지 | ✅ `BlobStorage` 어댑터 — `LocalDiskStorage` / `S3BlobStorage`(awssdk v2, endpoint override 로 MinIO 호환). `smartdesk.storage.type`. MIME 화이트리스트. `S3BlobStorageTest`(localstack). 바이러스 스캔 훅은 향후 |
+| 스케줄러 다중화 | ✅ **ShedLock**(`V10`) — 잡별 `@SchedulerLock` 으로 다중 인스턴스 1회 실행 |
+| 배포 준비 | ✅ `docker-compose.prod.yml` + `docs/DEPLOY.md` + `DemoAccountGuard`(prod 데모 계정 비활성화) |
+| K8s | ⬜ Deployment + HPA, Ingress, External Secrets, Helm 차트 — 배포 규모 확정 후 |
+| CI/CD | ⬜ 이미지 레지스트리 push + 스테이징 자동 배포 (현재는 빌드까지) |
+| 이벤트 버스 | ⬜ `ticket_event` / outbox → Kafka 발행 → 알림·색인·분석 컨슈머 분리 |
+| 관측성 심화 | ⬜ OpenTelemetry 분산 추적, Grafana 대시보드 |
 
 ---
 
@@ -153,8 +156,8 @@
 2. ~~**단계 1** 전체 (파이프라인 → EDA → 분류 모델)~~ — 완료
 3. ~~**단계 2** 전체 (pgvector 색인 + 하이브리드 검색 + RAG 초안)~~ — 완료
 4. ~~**단계 3** (지능형 트리아지 + SLA 위반 예측)~~ — 완료
-5. **단계 4** (RLS, S3, K8s, 이벤트 버스) — 배포 규모에 따라  ← 다음
-5. **단계 4** (RLS, S3, K8s) — 지속
+5. ~~**단계 4 핵심** (RLS, S3 어댑터, ShedLock, 배포 준비)~~ — 완료
+6. **단계 4 잔여** (K8s/Helm, 이미지 CD, Kafka 이벤트 버스, OTLP) — 실제 배포 규모 확정 후
 
 ---
 

@@ -136,7 +136,7 @@ npm run dev
 | 1 | 인증 방식 미지정 | JWT 액세스(HS256, 1h) + **리프레시 토큰(7d, 원자적 회전 — `revokeIfActive`)** + **로그아웃 시 액세스 토큰 폐기(jti blacklist)** | `security/JwtService`, `feature/auth/AuthService` |
 | 2 | API 응답 스키마 없음 | 컨트롤러별 record DTO. 오류는 `{timestamp,status,code,message,path}` 통일. 500 은 세부정보 숨기고 ref id 로그 | `common/GlobalExceptionHandler` |
 | 3 | 목록 페이지네이션 규격 없음 | 오프셋 `?page=&size=`, 응답 `PageResponse{content,page,size,totalElements,totalPages}` | `common/PageResponse` |
-| 4 | 엔드포인트별 RBAC 규칙 없음 | SI 직원 / 관리자 / 고객사 격리를 `CurrentUser` 헬퍼로 강제. 미인증은 JSON 401, 권한없음 JSON 403 | `security/CurrentUser`, `config/SecurityConfig` |
+| 4 | 엔드포인트별 RBAC 규칙 없음 | SI 직원 / 관리자 / 고객사 격리를 `CurrentUser` 헬퍼로 강제(미인증 JSON 401, 권한없음 403). 단계 4 에서 **PostgreSQL RLS** 이중 방어 추가 | `security/CurrentUser`, `common/tenant/*` |
 | 5 | `client_user` 계정 생성 API 없음 | **`POST /api/clients/{id}/users` 추가** (관리자, REQ-F-006 온보딩 화면에서 발급) | `feature/client/ClientUserController` |
 | 6 | category / department 조회 API 누락 | `GET /api/categories`, `/api/departments`, `/api/users` 추가 | `feature/meta/MetaController`, `UserController` |
 | 7 | 카테고리 자동분류(REQ-F-009) 알고리즘 미정 | 키워드 규칙 기반 제안(`RuleBasedCategorySuggester`) + 단계 1 에서 **TF-IDF 분류 모델**(`analytics/`, FastAPI). `provider=ml` 시 ML 호출, 실패·저신뢰 시 규칙 폴백 | `feature/ticket/classify/*`, `analytics/` |
@@ -171,6 +171,7 @@ npm run dev
 | 36 | 리포트·감사 데이터 내보내기 없음 | 감사 로그·티켓 이벤트 `?...&` 필터 그대로 `GET /api/audit/export`·`/api/audit/ticket-events/export` CSV(UTF-8 BOM). `GET /api/reports/sla` SLA 준수율(전체·고객사별·카테고리별) + `/reports/sla/export`, `/reports/sla` 화면(관리자) | `feature/report/ReportController`, `common/Csv.java`, `views/SlaReportView.vue` |
 | 37 | 관련 문서가 카테고리 완전일치뿐 (REQ-F-015 의미 검색 아님) | 단계 2 — pgvector 하이브리드 검색(`V7`). 지식문서·종료 티켓을 e5-small 임베딩 + BM25 RRF 융합. 테넌시 필터 SQL 강제. `POST /api/ai/tickets/{id}/related`. RAG 답변 초안(`/answer-draft`, 출처 인용). `rag.enabled` 로 옵트인, LLM 은 `ANTHROPIC_API_KEY` 시 활성 | `feature/rag/*`, `analytics/service /embed`, `views/TicketDetailView.vue` |
 | 38 | 분류·우선순위·배정이 각각 따로 (REQ-F-009·010 통합 트리아지 없음) | 단계 3 — `TriageService` 가 세 규칙 + 유사 티켓 + 담당자 실적 + (선택)LLM 을 종합해 신뢰도와 함께 산출(`V8`). 신규 티켓 자동 트리아지, 신뢰도 낮으면 관리자 검토. `SlaRiskService` SLA 위반 위험 사전 경고 | `feature/triage/*`, `SlaMonitorService`, `views/TicketDetailView.vue` |
+| 39 | 테넌시가 애플리케이션 레벨 필터뿐 (심층 방어 없음) | 단계 4 — PostgreSQL **RLS**(`V9`): `smartdesk_app` 비특권 롤 + `FORCE RLS` + `tenant_isolation` 정책. `RlsDataSource` 가 요청 컨텍스트로 세션변수 세팅. 크로스테넌트 접근은 404. 첨부는 `BlobStorage` 어댑터(로컬/S3), 스케줄러는 ShedLock 분산락 | `common/tenant/*`, `feature/attachment/*`, `config/SchedulingConfig` |
 
 ### 구현한 예외 처리 (요구사항 5장)
 - REQ-E-001 계약 만료 후에도 기존 열린 티켓 상태 변경 허용 (`updateStatus` 는 계약 검사 안 함)
@@ -210,7 +211,7 @@ TEST_DB_URL=jdbc:postgresql://localhost:5432/smartdesk_test TEST_DB_DRIVER=org.p
   TEST_DB_USERNAME=smartdesk TEST_DB_PASSWORD=smartdesk \
   JAVA_HOME=$(/usr/libexec/java_home -v 21) mvn test
 ```
-백엔드 총 113개 + 파이썬 4개(`analytics/`). 통합 테스트 DB 는 `pgvector/pgvector:pg17` 컨테이너.
+백엔드 총 120개 + 파이썬 4개(`analytics/`). 통합 테스트 DB 는 `pgvector/pgvector:pg17` + `localstack`(S3) 컨테이너.
 
 | 테스트 | 검증 |
 |---|---|
@@ -219,6 +220,8 @@ TEST_DB_URL=jdbc:postgresql://localhost:5432/smartdesk_test TEST_DB_DRIVER=org.p
 | `RagSearchTest` | 단계 2.2 하이브리드 검색 (실제 pgvector) — 유사 문서·티켓 추천, 질의 티켓 제외, **고객사 담당자는 공유 문서만** (SI 내부 문서 차단), 타 고객사 티켓 조회 403, 초안 API 인가 |
 | `TriageTest` | 단계 3 — 신규 티켓 자동 트리아지(카테고리·우선순위), preview 무변경, apply + `TRIAGED` 이벤트, SI 전용, SLA 위험도 구조 |
 | `TriageEvalTest` | 단계 3.3 회귀 평가셋 — 라벨 8건 카테고리·우선순위 정확도 ≥ 0.75 |
+| `RlsTest` | 단계 4 Row-Level Security — 고객사 컨텍스트는 자기 행만, DENY 는 전무, WITH CHECK 로 타 고객사 INSERT 차단, SI 내부 문서 불가시 |
+| `S3BlobStorageTest` | 단계 4 S3 어댑터 — localstack put/get/exists/delete 왕복, prefix, 없는 키 404 |
 | `RagUtilTest` | 단계 2 HTML 제거·청킹·SHA-256·벡터 리터럴 |
 | `ClassificationStrategyTest` | 단계 1.3 자동분류 전략 — 규칙 기반 키워드 매칭, ML 서비스 불통 시 규칙 폴백 |
 | `TicketLifecycleTest` | 우선순위 산정·SLA 계산·자동분류, 상태전이 검증, 자동배정, 재오픈, priority 엔드포인트, related-docs 스코프 |
@@ -284,18 +287,27 @@ docker compose --profile app --profile ml up --build          # + AI 서빙(ml, 
 - `frontend/Dockerfile` — node 빌드 → nginx (SPA fallback + `/api` → `backend:8080` 프록시)
 - `analytics/service/Dockerfile` — 빌드 시 분류 모델 학습 + 임베딩 모델 프리페치(CPU torch). 런타임 오프라인 동작. `ml` 프로파일 전용(빌드가 무겁다)
 
-### 운영 프로파일
+### 운영 배포
+
+VM 1대 + Compose 기준 상세 절차는 **[docs/DEPLOY.md](docs/DEPLOY.md)**. 요약:
+```bash
+docker compose -f docker-compose.prod.yml up -d --build          # + --profile ml 로 AI 서빙
+```
 `SPRING_PROFILES_ACTIVE=prod` + [application-prod.yml](backend/src/main/resources/application-prod.yml). 필수 환경변수:
 
 | 변수 | 설명 |
 |---|---|
-| `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | PostgreSQL 접속 |
+| `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | PostgreSQL 접속 (pgvector 필요) |
 | `JWT_SECRET` | Base64 32바이트+. **미설정 시 부팅 거부** |
-| `SMARTDESK_CORS_ALLOWED_ORIGINS` | 예: `https://desk.example.com` |
-| `ATTACHMENT_DIR` | 다중 인스턴스면 S3/NFS 등 공유 스토리지 (현재 로컬 디스크) |
+| `SMARTDESK_CORS_ALLOWED_ORIGINS`, `PASSWORD_RESET_URL_BASE` | 공개 도메인 |
+| `SMARTDESK_ADMIN_PASSWORD` | (선택) `admin@smartdesk.io` 재해싱 — 없으면 데모 비번 경고 |
+| `SMARTDESK_STORAGE_TYPE=s3` + `SMARTDESK_STORAGE_S3_*` | 다중 인스턴스 시 (기본 로컬 디스크) |
 
-- TLS 는 리버스 프록시/인그레스에서 종료 (`server.forward-headers-strategy=framework`, `X-Forwarded-*` 신뢰)
-- prod 에서 로그는 JSON (logstash-logback-encoder), 그 외엔 사람이 읽는 패턴 + `requestId`
+- **RLS**: 마이그레이션은 소유자, 앱 커넥션은 `smartdesk_app` 비특권 롤. `V9` 가 롤 생성에 `CREATEROLE` 필요 (DEPLOY.md 참고)
+- **ShedLock**: 스케줄러가 다중 인스턴스에서도 1회만 (`shedlock` 테이블)
+- **DemoAccountGuard**: prod 첫 부팅에 데모 계정 자동 비활성화
+- TLS 는 리버스 프록시에서 종료 (`server.forward-headers-strategy=framework`)
+- prod 로그는 JSON (logstash-logback-encoder)
 
 ### 관측성
 | 엔드포인트 | 용도 |
@@ -313,6 +325,6 @@ docker compose --profile app --profile ml up --build          # + AI 서빙(ml, 
 
 ## 7. 다음 단계 (`docs/ROADMAP.md` 참고)
 
-- 단계 0.5 (a~h) ✅ · 단계 1 (분석·분류) ✅ · 단계 2 (RAG 추천·초안) ✅ · 단계 3 (트리아지·SLA 예측) ✅
-- **단계 4**: PostgreSQL Row-Level Security 테넌시 이중 방어, 스토리지 S3 어댑터, K8s(HPA), 이벤트 버스(Kafka)
-- SLA 위반 예측을 휴리스틱 → 학습 모델로, cross-encoder 재순위, 색인 outbox(다중 인스턴스)
+- 단계 0.5 ✅ · 단계 1 (분석·분류) ✅ · 단계 2 (RAG) ✅ · 단계 3 (트리아지·SLA 예측) ✅ · 단계 4 핵심 (RLS·S3·ShedLock·배포) ✅
+- **단계 4 잔여**: K8s/Helm, 이미지 CD, Kafka 이벤트 버스, OpenTelemetry — 실제 배포 규모 확정 후
+- SLA 예측 휴리스틱 → 학습 모델, cross-encoder 재순위, 색인 outbox, 첨부 바이러스 스캔
