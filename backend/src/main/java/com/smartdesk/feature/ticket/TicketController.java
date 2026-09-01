@@ -2,7 +2,6 @@ package com.smartdesk.feature.ticket;
 
 import com.smartdesk.common.ApiException;
 import com.smartdesk.common.PageResponse;
-import com.smartdesk.feature.triage.TriageService;
 import com.smartdesk.domain.*;
 import com.smartdesk.domain.Enums.AuthorType;
 import com.smartdesk.domain.Enums.NotificationType;
@@ -46,8 +45,6 @@ public class TicketController {
     private final TicketEventService eventLog;
     private final NotificationService notifications;
     private final org.springframework.context.ApplicationEventPublisher events;
-    private final com.smartdesk.feature.triage.TriageService triage;
-    private final com.smartdesk.feature.triage.TriageProperties triageProps;
 
     public TicketController(TicketRepo tickets, ContractRepo contracts, CommentRepo comments,
                             TicketHistoryRepo histories, CategoryRepo categories, SystemAssetRepo systems,
@@ -55,12 +52,8 @@ public class TicketController {
                             DocumentShareRepo documentShares, SlaService sla, com.smartdesk.feature.ticket.classify.CategorySuggester suggestion,
                             AssignmentService assignment, PriorityRules priorityRules,
                             TicketEventService eventLog, NotificationService notifications,
-                            org.springframework.context.ApplicationEventPublisher events,
-                            com.smartdesk.feature.triage.TriageService triage,
-                            com.smartdesk.feature.triage.TriageProperties triageProps) {
+                            org.springframework.context.ApplicationEventPublisher events) {
         this.events = events;
-        this.triage = triage;
-        this.triageProps = triageProps;
         this.tickets = tickets;
         this.contracts = contracts;
         this.comments = comments;
@@ -180,56 +173,17 @@ public class TicketController {
         t.setRequesterId(requesterId);
         t.setTitle(req.title().trim());
         t.setContent(req.content());
-        t.setPriority(priorityRules.infer(req.title(), req.content()));   // 트리아지 실패 대비 기본값
+        t.setCategoryId(suggestion.suggest(req.title(), req.content()));      // 즉시 규칙 제안
+        t.setPriority(priorityRules.infer(req.title(), req.content()));
         Instant now = Instant.now();
         t.setCreatedAt(now);
         t.setUpdatedAt(now);
         t.setSlaDueAt(sla.computeDueAt(contract, now));
         t = tickets.save(t);
         eventLog.record(t.getId(), TicketEventType.CREATED, null, t.getPriority().name(), p);
-
-        applyTriage(t, p);
-        return toDetail(tickets.findById(t.getId()).orElse(t));
-    }
-
-    /** 단계 3.1: 신규 티켓 지능형 트리아지 — 카테고리·우선순위 적용, 신뢰도 충분하면 담당자까지 배정. */
-    private void applyTriage(Ticket t, AuthPrincipal actor) {
-        TriageService.TriageResult r;
-        try {
-            r = triage.triage(t);
-        } catch (Exception e) {
-            // 트리아지 실패 시 최소한 카테고리 규칙 제안만
-            Long cat = suggestion.suggest(t.getTitle(), t.getContent());
-            if (cat != null) { t.setCategoryId(cat); tickets.save(t); }
-            return;
-        }
-        if (r.categoryId() != null) t.setCategoryId(r.categoryId());
-        t.setPriority(r.priority());
-
-        if (!r.escalate() && triageProps.isAutoAssign() && r.suggestedAssigneeId() != null) {
-            t.setAssigneeId(r.suggestedAssigneeId());
-            t.setStatus(TicketStatus.IN_PROGRESS);
-            if (t.getFirstRespondedAt() == null) t.setFirstRespondedAt(Instant.now());
-            tickets.save(t);
-            histories.save(new TicketHistory(t.getId(), "assignee", null,
-                    String.valueOf(r.suggestedAssigneeId()), "SYSTEM", null));
-            eventLog.recordSystem(t.getId(), TicketEventType.ASSIGNED, null,
-                    String.valueOf(r.suggestedAssigneeId()));
-            notifications.notifyUser(r.suggestedAssigneeId(), NotificationType.TICKET_ASSIGNED,
-                    "티켓 자동 배정: #" + t.getId(), t.getTitle() + " (트리아지 신뢰도 " + r.confidence() + ")", t.getId());
-        } else {
-            tickets.save(t);
-            for (Long mgrId : managerIds(t.getCategoryId())) {
-                notifications.notifyUser(mgrId, NotificationType.TRIAGE_REVIEW,
-                        "트리아지 검토 필요: #" + t.getId(),
-                        t.getTitle() + " — 신뢰도 " + r.confidence() + ", 수동 배정 필요", t.getId());
-            }
-        }
-    }
-
-    private java.util.List<Long> managerIds(Long categoryId) {
-        var mgrs = users.findByRoleAndActiveTrue(com.smartdesk.domain.Enums.Role.MANAGER);
-        return mgrs.stream().map(com.smartdesk.domain.AppUser::getId).toList();
+        // 단계 3: 커밋 후 비동기로 정밀 트리아지 (SYSTEM 컨텍스트 → 전 테넌트 유사도 활용)
+        events.publishEvent(new com.smartdesk.feature.triage.TicketCreatedEvent(t.getId()));
+        return toDetail(t);
     }
 
     @GetMapping("/{ticketId}")

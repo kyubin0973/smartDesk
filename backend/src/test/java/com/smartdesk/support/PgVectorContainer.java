@@ -34,5 +34,9 @@ public abstract class PgVectorContainer {
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
         registry.add("spring.datasource.driver-class-name", () -> "org.postgresql.Driver");
+        // 단계 4: Flyway 는 소유자 커넥션 (앱 커넥션만 RlsDataSource 로 smartdesk_app SET ROLE)
+        registry.add("spring.flyway.url", POSTGRES::getJdbcUrl);
+        registry.add("spring.flyway.user", POSTGRES::getUsername);
+        registry.add("spring.flyway.password", POSTGRES::getPassword);
     }
 }

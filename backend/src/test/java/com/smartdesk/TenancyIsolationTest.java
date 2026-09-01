@@ -12,9 +12,10 @@ class TenancyIsolationTest extends AbstractIntegrationTest {
 
     @Test
     void clientUser_cannotReadOtherClientsTicket() throws Exception {
-        // 티켓 1042 는 client 1(A고객사). client 2(B고객사) 담당자로 접근 → 403
+        // 티켓 1042 는 client 1(A고객사). client 2(B고객사) 담당자로 접근 →
+        // RLS(단계 4)로 행 자체가 안 보여 404 (존재 여부도 노출 안 함)
         mvc.perform(get("/api/tickets/1042").header("Authorization", "Bearer " + clientBToken))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
     }
 
     @Test

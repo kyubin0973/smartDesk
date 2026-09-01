@@ -103,11 +103,11 @@ class AttachmentTest extends PgVectorContainer {
     @Test
     void clientUser_cannotUploadToOtherClientsTicket() throws Exception {
         MockMultipartFile file = new MockMultipartFile("file", "x.txt", "text/plain", "x".getBytes());
-        // 티켓 1042 = client 1. client 2(B고객사) 담당자로 업로드 → 403
+        // 티켓 1042 = client 1. client 2(B고객사) 담당자 → RLS 로 티켓이 안 보여 404
         mvc.perform(multipart("/api/attachments").file(file)
                         .param("ownerType", "TICKET").param("ownerId", "1042")
                         .header("Authorization", "Bearer " + clientBToken))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -123,10 +123,10 @@ class AttachmentTest extends PgVectorContainer {
         mvc.perform(get("/api/attachments/" + id).header("Authorization", "Bearer " + clientAToken))
                 .andExpect(status().isOk());
 
-        // 공유받지 않은 고객사(B): 403
+        // 공유받지 않은 고객사(B): RLS 로 문서가 안 보여 404
         mvc.perform(get("/api/attachments").param("ownerType", "DOCUMENT").param("ownerId", "2")
                         .header("Authorization", "Bearer " + clientBToken))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
 
         // 고객사 담당자는 문서 첨부 업로드 불가
         MockMultipartFile f = new MockMultipartFile("file", "x.txt", "text/plain", "x".getBytes());
@@ -135,11 +135,11 @@ class AttachmentTest extends PgVectorContainer {
                         .header("Authorization", "Bearer " + clientAToken))
                 .andExpect(status().isForbidden());
 
-        // SI_INTERNAL 문서 첨부는 고객사 담당자 접근 불가
+        // SI_INTERNAL 문서 첨부는 고객사 담당자 접근 불가 (RLS 로 문서가 안 보여 404)
         uploadAs(siToken, "DOCUMENT", "1", "internal.txt");
         mvc.perform(get("/api/attachments").param("ownerType", "DOCUMENT").param("ownerId", "1")
                         .header("Authorization", "Bearer " + clientAToken))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
     }
 
     @Test

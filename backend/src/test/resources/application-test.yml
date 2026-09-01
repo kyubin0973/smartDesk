@@ -15,6 +15,10 @@ spring:
   flyway:
     enabled: true
     clean-disabled: false
+    # 로컬 PG 오버라이드 시: Flyway 는 소유자 커넥션 (컨테이너 실행 시엔 PgVectorContainer 가 주입)
+    url: ${TEST_DB_URL:jdbc:postgresql://localhost:5432/smartdesk_test}
+    user: ${TEST_DB_USERNAME:smartdesk}
+    password: ${TEST_DB_PASSWORD:smartdesk}
 
 smartdesk:
   jwt:

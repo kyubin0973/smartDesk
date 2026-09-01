@@ -14,6 +14,10 @@ spring:
   flyway:
     enabled: true
     validate-on-migrate: true
+    # 단계 4: 마이그레이션은 소유자, 앱 커넥션은 RlsDataSource 가 smartdesk_app 롤로 SET ROLE (RLS 적용)
+    url: ${DB_URL}
+    user: ${FLYWAY_DB_USERNAME:${DB_USERNAME}}
+    password: ${FLYWAY_DB_PASSWORD:${DB_PASSWORD}}
 
 server:
   # 리버스 프록시/인그레스에서 TLS 종료 → X-Forwarded-* 신뢰
