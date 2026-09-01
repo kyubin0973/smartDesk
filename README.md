@@ -117,6 +117,7 @@ npm run dev
 | `GET /api/reports/sla` (+ `/export`) | SLA 준수율 리포트 (관리자, 0.5-d) |
 | `GET /api/analytics/*` | 운영 분석 마트 (관리자, 단계 1.1) |
 | `POST /api/ai/tickets/{id}/related` · `/answer-draft` | 유사 문서·티켓 추천 · RAG 답변 초안 (단계 2) |
+| `POST /api/tickets/{id}/triage` · `/triage/apply` · `GET /sla-risk` | 지능형 트리아지 · SLA 위반 위험도 (SI, 단계 3) |
 | `GET /api/ai/rag/status` · `POST /api/ai/rag/reindex` | 벡터 색인 상태·재색인 (관리자, 단계 2.1) |
 
 ### 데이터 (ERD)
@@ -139,7 +140,7 @@ npm run dev
 | 5 | `client_user` 계정 생성 API 없음 | **`POST /api/clients/{id}/users` 추가** (관리자, REQ-F-006 온보딩 화면에서 발급) | `feature/client/ClientUserController` |
 | 6 | category / department 조회 API 누락 | `GET /api/categories`, `/api/departments`, `/api/users` 추가 | `feature/meta/MetaController`, `UserController` |
 | 7 | 카테고리 자동분류(REQ-F-009) 알고리즘 미정 | 키워드 규칙 기반 제안(`RuleBasedCategorySuggester`) + 단계 1 에서 **TF-IDF 분류 모델**(`analytics/`, FastAPI). `provider=ml` 시 ML 호출, 실패·저신뢰 시 규칙 폴백 | `feature/ticket/classify/*`, `analytics/` |
-| 8 | 담당자 자동배정(REQ-F-010) 규칙 미정 | `category_routing` + `user_client` 기준, 열린 티켓 최소 담당자 | `AssignmentService` |
+| 8 | 담당자 자동배정(REQ-F-010) 규칙 미정 | `category_routing` + `user_client` 기준 후보 → 단계 3 `AssigneeScorer` 가 부하·카테고리 실적·SLA 위반율로 스코어링. `TriageService` 가 분류·우선순위와 함께 결정, 신뢰도 낮으면 관리자 검토 | `AssignmentService`, `feature/triage/*` |
 | 9 | SLA 계산식 미정 | 기본 `sla_due_at = created_at + sla_resolution_min` (24h). `business-hours-only=true` 시 **영업시간만 카운트** (평일 09-18 Asia/Seoul, 설정 가능) | `SlaService` |
 | 10 | SLA 초과 알림 수단 미정 | **`SlaMonitorJob`(5분) → `SlaMonitorService`** — 티켓 단위 처리(1건 실패가 전체 재알림 유발 안 함). **초과 경과 시간별 다단계 에스컬레이션**(L1 담당자 → L2 부서관리자 → L3 전체관리자, 0.5-h). 알림 저장은 `NotificationWriter`의 REQUIRES_NEW 트랜잭션 + 유니크로 중복 방지. 이메일(SMTP)·Slack 채널 어댑터는 유형별 설정(0.5-a) | `feature/ticket/SlaMonitorService`, `feature/notification/NotificationChannels` |
 | 11 | 문서 버전 이력 테이블 없음 | `document_version` 스냅샷 + `GET /api/documents/{id}/versions` | `document_version` |
@@ -169,6 +170,7 @@ npm run dev
 | 35 | 알림이 30초 폴링 (지연·부하) | `GET /api/notifications/stream` SSE — 새 알림 시 `notification` 이벤트로 즉시 신호, 프런트가 목록 재조회. EventSource 대신 fetch 스트리밍(Authorization 헤더)+지수 백오프 재연결. 폴링은 120초 백스톱으로 축소 | `feature/notification/SseHub.java`, `api/notificationStream.js` |
 | 36 | 리포트·감사 데이터 내보내기 없음 | 감사 로그·티켓 이벤트 `?...&` 필터 그대로 `GET /api/audit/export`·`/api/audit/ticket-events/export` CSV(UTF-8 BOM). `GET /api/reports/sla` SLA 준수율(전체·고객사별·카테고리별) + `/reports/sla/export`, `/reports/sla` 화면(관리자) | `feature/report/ReportController`, `common/Csv.java`, `views/SlaReportView.vue` |
 | 37 | 관련 문서가 카테고리 완전일치뿐 (REQ-F-015 의미 검색 아님) | 단계 2 — pgvector 하이브리드 검색(`V7`). 지식문서·종료 티켓을 e5-small 임베딩 + BM25 RRF 융합. 테넌시 필터 SQL 강제. `POST /api/ai/tickets/{id}/related`. RAG 답변 초안(`/answer-draft`, 출처 인용). `rag.enabled` 로 옵트인, LLM 은 `ANTHROPIC_API_KEY` 시 활성 | `feature/rag/*`, `analytics/service /embed`, `views/TicketDetailView.vue` |
+| 38 | 분류·우선순위·배정이 각각 따로 (REQ-F-009·010 통합 트리아지 없음) | 단계 3 — `TriageService` 가 세 규칙 + 유사 티켓 + 담당자 실적 + (선택)LLM 을 종합해 신뢰도와 함께 산출(`V8`). 신규 티켓 자동 트리아지, 신뢰도 낮으면 관리자 검토. `SlaRiskService` SLA 위반 위험 사전 경고 | `feature/triage/*`, `SlaMonitorService`, `views/TicketDetailView.vue` |
 
 ### 구현한 예외 처리 (요구사항 5장)
 - REQ-E-001 계약 만료 후에도 기존 열린 티켓 상태 변경 허용 (`updateStatus` 는 계약 검사 안 함)
@@ -208,13 +210,15 @@ TEST_DB_URL=jdbc:postgresql://localhost:5432/smartdesk_test TEST_DB_DRIVER=org.p
   TEST_DB_USERNAME=smartdesk TEST_DB_PASSWORD=smartdesk \
   JAVA_HOME=$(/usr/libexec/java_home -v 21) mvn test
 ```
-백엔드 총 104개 + 파이썬 4개(`analytics/`). 통합 테스트 DB 는 `pgvector/pgvector:pg17` 컨테이너.
+백엔드 총 113개 + 파이썬 4개(`analytics/`). 통합 테스트 DB 는 `pgvector/pgvector:pg17` 컨테이너.
 
 | 테스트 | 검증 |
 |---|---|
 | `TenancyIsolationTest` | REQ-N-001 고객사 간 격리 (403), 미인증 JSON 401 |
 | `AnalyticsTest` | 단계 1.1 분석 마트 API — 관리자 전용, 요약/카테고리 통계/히트맵/SLA 권장값, 마트 갱신 |
 | `RagSearchTest` | 단계 2.2 하이브리드 검색 (실제 pgvector) — 유사 문서·티켓 추천, 질의 티켓 제외, **고객사 담당자는 공유 문서만** (SI 내부 문서 차단), 타 고객사 티켓 조회 403, 초안 API 인가 |
+| `TriageTest` | 단계 3 — 신규 티켓 자동 트리아지(카테고리·우선순위), preview 무변경, apply + `TRIAGED` 이벤트, SI 전용, SLA 위험도 구조 |
+| `TriageEvalTest` | 단계 3.3 회귀 평가셋 — 라벨 8건 카테고리·우선순위 정확도 ≥ 0.75 |
 | `RagUtilTest` | 단계 2 HTML 제거·청킹·SHA-256·벡터 리터럴 |
 | `ClassificationStrategyTest` | 단계 1.3 자동분류 전략 — 규칙 기반 키워드 매칭, ML 서비스 불통 시 규칙 폴백 |
 | `TicketLifecycleTest` | 우선순위 산정·SLA 계산·자동분류, 상태전이 검증, 자동배정, 재오픈, priority 엔드포인트, related-docs 스코프 |
@@ -240,8 +244,9 @@ TEST_DB_URL=jdbc:postgresql://localhost:5432/smartdesk_test TEST_DB_DRIVER=org.p
 | `SseHeartbeatJob` | 25초 | 실시간 알림 SSE keep-alive + 죽은 연결 정리 (0.5-b) |
 | `AnalyticsRefreshJob` | 매일 00:20 UTC | `analytics.ticket_resolution_stats` materialized view 갱신 (단계 1.1) |
 | `RagReconcileJob` | 10분 | 미색인·변경 문서·티켓 벡터 재색인 (단계 2.1, `rag.enabled` 시) |
+| `SlaMonitorJob` (확장) | 5분 | 8시간 관찰창에서 SLA 위반 위험 티켓 사전 경고 (단계 3.2) |
 
-## 5.5 데이터 분석 · AI (`analytics/` + `feature/rag/`, 단계 1~2)
+## 5.5 데이터 분석 · AI (`analytics/` + `feature/rag/` + `feature/triage/`, 단계 1~3)
 
 Python 컴포넌트 상세는 [`analytics/README.md`](analytics/README.md).
 
@@ -260,6 +265,11 @@ make serve                                           # FastAPI :8000 — POST /c
 - **2.1 색인**: `V7__vector_search.sql` — pgvector `embedding`(384차원, HNSW). 문서 + 종료 티켓을 청킹·임베딩(multilingual-e5-small). 저장/종료 이벤트 + 10분 재조정
 - **2.2 하이브리드 검색**: `POST /api/ai/tickets/{id}/related` — 벡터 + BM25 RRF 융합, 테넌시 필터를 SQL 에서 강제. `TicketDetailView` "유사 문서·티켓"
 - **2.3 답변 초안**: `POST /api/ai/tickets/{id}/answer-draft` (SI) — 검색 문서 컨텍스트로 LLM 초안, `[n]` 출처 인용 강제. `RAG_LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY` 로 활성 (미설정 시 근거 문서만)
+
+**단계 3 — AI 에이전트** (`feature/triage/`, 기본 활성 — `TRIAGE_AUTO_ASSIGN` 로 제어)
+- **3.1 지능형 트리아지**: `TriageService` 가 분류(단계1)+유사 티켓(단계2)+담당자 실적(단계1 분석)+(선택)LLM 을 종합해 카테고리·우선순위·담당자·신뢰도 산출. 신규 티켓 생성 시 자동 적용, 신뢰도 충분하면 배정까지. `POST /api/tickets/{id}/triage[/apply]`, `TicketDetailView` "AI 트리아지" 카드
+- **3.2 SLA 위반 예측**: `SlaRiskService` 휴리스틱(경과율·부하·카테고리 p90·재오픈) → 위험도. `SlaMonitor` 8시간 관찰창에서 HIGH 위험 사전 경고. `GET /api/tickets/{id}/sla-risk`
+- **3.3**: `TriageService` 파이프라인이 오케스트레이션(LangGraph 미사용). `TriageEvalTest` 회귀 평가셋
 
 ## 6. 배포 / 운영
 
@@ -303,7 +313,6 @@ docker compose --profile app --profile ml up --build          # + AI 서빙(ml, 
 
 ## 7. 다음 단계 (`docs/ROADMAP.md` 참고)
 
-- 단계 0.5 (a~h) ✅ · 단계 1 (데이터 분석·분류) ✅ · 단계 2 (pgvector RAG 추천·초안) ✅
-- **단계 3**: 지능형 트리아지(분류+우선순위+배정 통합), SLA 위반 확률 예측, LangGraph 오케스트레이션
-- cross-encoder 재순위로 RAG 정확도 개선, 색인 outbox 테이블(다중 인스턴스)
-- PostgreSQL Row-Level Security 로 테넌시 이중 방어, 스토리지 S3 어댑터
+- 단계 0.5 (a~h) ✅ · 단계 1 (분석·분류) ✅ · 단계 2 (RAG 추천·초안) ✅ · 단계 3 (트리아지·SLA 예측) ✅
+- **단계 4**: PostgreSQL Row-Level Security 테넌시 이중 방어, 스토리지 S3 어댑터, K8s(HPA), 이벤트 버스(Kafka)
+- SLA 위반 예측을 휴리스틱 → 학습 모델로, cross-encoder 재순위, 색인 outbox(다중 인스턴스)
