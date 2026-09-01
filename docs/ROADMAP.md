@@ -3,9 +3,10 @@
 요구사항정의서 8장("향후 확장 방향": SI 플랫폼 → 데이터분석 → AI 서비스 → K8s 배포)을
 현재 코드베이스 기준으로 구체화한 계획입니다.
 
-- **현재:** Spring Boot 3.3 + Vue 3 · 규칙 기반 자동분류/배정 · SLA 타이머(영업시간·다단계 에스컬레이션) · 승인자 워크플로 · 감사 로그 + CSV/리포트 · 실시간 알림(SSE) · 리치텍스트 문서 · 마이그레이션 V1~V5 · 테스트 87개
+- **현재:** Spring Boot 3.3 + Vue 3 + Python(analytics) · 규칙/ML 자동분류 · SLA 타이머(다단계 에스컬레이션) · 승인자 워크플로 · 감사 로그 + CSV/리포트 · 실시간 알림(SSE) · 리치텍스트 문서 · 운영 분석 대시보드 · 마이그레이션 V1~V6 · 백엔드 테스트 94개 + 파이썬 4개
 - **단계 0.5 (빠른 개선) — 완료 ✅** (a~h 아래 표)
-- **다음 큰 모듈:** 단계 1(데이터 분석) — 규칙 기반 로직을 실데이터로 검증
+- **단계 1 (데이터 분석) — 완료 ✅** (파이프라인 + EDA/검정 + TF-IDF 분류 모델 + FastAPI 서빙 + 폴백)
+- **다음 큰 모듈:** 단계 2 (RAG 유사 티켓/문서 추천 — pgvector)
 
 ---
 
@@ -42,29 +43,34 @@
 
 ---
 
-## 단계 1 — 데이터 분석 기반 마련
+## 단계 1 — 데이터 분석 기반 마련 — 완료 ✅
 
-**목표:** 규칙 기반 로직(자동분류·SLA·배정)을 실데이터로 검증하고 통계적 근거 확보. **다음 캡스톤 모듈.**
+**목표:** 규칙 기반 로직(자동분류·SLA)을 실데이터로 검증하고 통계적 근거 확보.
 
-### 1.1 데이터 파이프라인
-- 운영 DB → 분석 스키마/DW 로 일 1회 ETL (dbt 또는 cron + SQL). 시작은 `ticket` + `ticket_event` 만
-- `ticket_event` 는 이미 append-only 로 쌓이는 중 → 상태별 체류시간·재오픈율·담당자별 처리량을 SQL 로 바로 계산 가능
-- 파생 마트: `ticket_resolution_stats(category_id, dow, hour, p50_minutes, p90_minutes, sla_breach_rate)`
+### 1.1 데이터 파이프라인 ✅ — `V6__analytics.sql`, `feature/analytics/*`, `/analytics` 화면
+- `analytics` 스키마: `ticket_metrics` 뷰(처리시간·최초응답·SLA준수·재오픈·요청 요일·시간대),
+  `ticket_resolution_stats` materialized view(카테고리×요일×시간대 p50/p90/위반율), `assignee_throughput` 뷰
+- `AnalyticsRefreshJob` 야간 REFRESH. `AnalyticsController` 관리자 API + Vue 대시보드(히트맵·SLA 권장값)
+- `external_ticket` 테이블 — 외부 데이터셋 적재 대상
 
-### 1.2 분석 과제 (Kaggle IT Ticket 데이터셋 + 자체 데이터)
-- **EDA**: 카테고리별 처리시간 분포, 요일·시간대 패턴, 우선순위 vs 실제 처리시간, 재오픈율
-- **통계 검정**: 카테고리 간 평균 처리시간 차이(ANOVA), SLA 위반과 요청 시각·시스템의 연관성(카이제곱), 담당자별 처리시간 차이
-- **결과 반영**:
-  - `contract.sla_resolution_min` 권장값 산출 (카테고리별 p90 기반)
-  - `category_routing` 부서 매핑을 실제 처리 이력으로 재조정
-  - `PriorityRules` 키워드 가중치 튜닝
+### 1.2 분석 · 통계 검정 ✅ — `analytics/` (Python), `reports/*.md`
+- 데이터셋: **Tobi-Bueck/customer-support-tickets** (HF, CC-BY-NC-4.0). Kaggle "Customer IT Support" 동일 데이터의 저자 미러 → 인증 불필요. EN 11,923행, 큐 10종
+- EDA: 큐·유형·우선순위 분포, 큐×우선순위/유형 교차표, 본문 길이
+- 검정: 큐 ⟂ 우선순위 카이제곱(V=0.28, 종속), 큐 ⟂ 유형(V=0.20, 종속), 큐별 본문길이 Kruskal(차이 有)
+  · 운영 DB 검정(카테고리별 처리시간 ANOVA)은 표본 축적 후 자동 실행
+- 결과 반영 훅: `/analytics/sla-recommendation` (카테고리별 p90 → `contract.sla_resolution_min` 권장값)
 
-### 1.3 텍스트 기반 카테고리 분류 모델
-- 제목+내용 → 카테고리. 베이스라인: TF-IDF + LinearSVC / LogisticRegression
-- 평가: 규칙 기반(`CategorySuggestionService`) 대비 macro-F1, 혼동행렬. 목표: 규칙 대비 +10%p
-- 서빙: 별도 Python 서비스(FastAPI). Spring 은 `CategorySuggestionService` 를 인터페이스화 → `RuleBasedSuggestion` / `MlSuggestion(HttpClient)` 전략 선택. 서비스 다운 시 규칙으로 폴백
+### 1.3 텍스트 분류 모델 ✅ — `analytics/model/`, `analytics/service/` (FastAPI), `feature/ticket/classify/`
+- TF-IDF(word 1–2gram + char_wb 3–5gram) + LinearSVC(calibrated). 홀드아웃 macro-F1:
+  규칙 0.18 → LogReg 0.43 → **LinearSVC 0.49 (+31%p, 목표 +10%p 초과)**
+- 잘 잡는 큐: Billing/Outages (F1 0.57~0.81). 약한 큐: IT↔Technical↔Customer Service (의미 중첩) → 단계 2 임베딩으로 개선
+- 서빙: FastAPI `POST /classify` {subject, body} → {queue, confidence}. `analytics/service/Dockerfile`, compose `ml` 서비스
+- Spring: `CategorySuggester` 인터페이스 → `RuleBasedCategorySuggester` / `MlCategorySuggester`.
+  `smartdesk.classification.provider=rule|ml`, `queue-map`(모델 라벨 → SmartDesk 카테고리), `ml-min-confidence`.
+  ML 오류·저신뢰·매핑없음 → 규칙 기반 폴백 (런타임 검증)
 
-**연결점:** REQ-F-009(자동분류)·REQ-F-011(SLA)을 실측으로 검증
+**한계·다음:** 외부 데이터셋 라벨 체계가 SmartDesk 카테고리와 달라 `queue-map` 으로 근사. 운영에서
+자체 티켓 라벨이 쌓이면 재학습하면 매핑 불필요. 처리시간 기반 검정은 운영 데이터 축적 후.
 
 ---
 
@@ -129,8 +135,8 @@
 ## 6개월 제안 순서
 
 1. ~~**0.5** 전체 (a~h)~~ — 완료
-2. **단계 1** 전체 (파이프라인 → EDA → 분류 모델) — 6~8주
-3. **단계 2.1~2.2** (pgvector 색인 + 하이브리드 검색) — 4주
+2. ~~**단계 1** 전체 (파이프라인 → EDA → 분류 모델)~~ — 완료
+3. **단계 2.1~2.2** (pgvector 색인 + 하이브리드 검색) — 4주  ← 다음
 4. **단계 2.3 + 단계 3.1** (RAG 초안 + 트리아지) — 4주
 5. **단계 4** (RLS, S3, K8s) — 지속
 

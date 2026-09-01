@@ -8,10 +8,11 @@
 
 ```
 smartDesk/
-├─ backend/          Spring Boot REST API (엔티티 16개, 엔드포인트 30여 개)
-├─ frontend/         Vue 3 SPA (화면 11개 SCR-* 매핑)
-├─ docker-compose.yml   PostgreSQL 16
-└─ docs/            원본 산출물 PDF/XLSX (프로젝트 루트에 위치)
+├─ backend/          Spring Boot REST API (엔티티 16개, 엔드포인트 40여 개)
+├─ frontend/         Vue 3 SPA
+├─ analytics/        Python — 데이터 분석 + TF-IDF 티켓 분류 모델 + FastAPI 서빙 (단계 1)
+├─ docker-compose.yml   PostgreSQL + (profile app) backend/frontend/ml
+└─ docs/            원본 산출물 PDF/XLSX + ROADMAP.md
 ```
 
 ---
@@ -132,7 +133,7 @@ npm run dev
 | 4 | 엔드포인트별 RBAC 규칙 없음 | SI 직원 / 관리자 / 고객사 격리를 `CurrentUser` 헬퍼로 강제. 미인증은 JSON 401, 권한없음 JSON 403 | `security/CurrentUser`, `config/SecurityConfig` |
 | 5 | `client_user` 계정 생성 API 없음 | **`POST /api/clients/{id}/users` 추가** (관리자, REQ-F-006 온보딩 화면에서 발급) | `feature/client/ClientUserController` |
 | 6 | category / department 조회 API 누락 | `GET /api/categories`, `/api/departments`, `/api/users` 추가 | `feature/meta/MetaController`, `UserController` |
-| 7 | 카테고리 자동분류(REQ-F-009) 알고리즘 미정 | 키워드 규칙 기반 제안 (8장: ML 은 2차). 등록 시 자동 저장, SI 확정/수정 | `CategorySuggestionService` |
+| 7 | 카테고리 자동분류(REQ-F-009) 알고리즘 미정 | 키워드 규칙 기반 제안(`RuleBasedCategorySuggester`) + 단계 1 에서 **TF-IDF 분류 모델**(`analytics/`, FastAPI). `provider=ml` 시 ML 호출, 실패·저신뢰 시 규칙 폴백 | `feature/ticket/classify/*`, `analytics/` |
 | 8 | 담당자 자동배정(REQ-F-010) 규칙 미정 | `category_routing` + `user_client` 기준, 열린 티켓 최소 담당자 | `AssignmentService` |
 | 9 | SLA 계산식 미정 | 기본 `sla_due_at = created_at + sla_resolution_min` (24h). `business-hours-only=true` 시 **영업시간만 카운트** (평일 09-18 Asia/Seoul, 설정 가능) | `SlaService` |
 | 10 | SLA 초과 알림 수단 미정 | **`SlaMonitorJob`(5분) → `SlaMonitorService`** — 티켓 단위 처리(1건 실패가 전체 재알림 유발 안 함). **초과 경과 시간별 다단계 에스컬레이션**(L1 담당자 → L2 부서관리자 → L3 전체관리자, 0.5-h). 알림 저장은 `NotificationWriter`의 REQUIRES_NEW 트랜잭션 + 유니크로 중복 방지. 이메일(SMTP)·Slack 채널 어댑터는 유형별 설정(0.5-a) | `feature/ticket/SlaMonitorService`, `feature/notification/NotificationChannels` |
@@ -201,11 +202,13 @@ TEST_DB_URL=jdbc:postgresql://localhost:5432/smartdesk_test TEST_DB_DRIVER=org.p
   TEST_DB_USERNAME=smartdesk TEST_DB_PASSWORD=smartdesk \
   JAVA_HOME=$(/usr/libexec/java_home -v 21) mvn test
 ```
-총 87개.
+백엔드 총 94개 + 파이썬 4개(`analytics/`).
 
 | 테스트 | 검증 |
 |---|---|
 | `TenancyIsolationTest` | REQ-N-001 고객사 간 격리 (403), 미인증 JSON 401 |
+| `AnalyticsTest` | 단계 1.1 분석 마트 API — 관리자 전용, 요약/카테고리 통계/히트맵/SLA 권장값, 마트 갱신 |
+| `ClassificationStrategyTest` | 단계 1.3 자동분류 전략 — 규칙 기반 키워드 매칭, ML 서비스 불통 시 규칙 폴백 |
 | `TicketLifecycleTest` | 우선순위 산정·SLA 계산·자동분류, 상태전이 검증, 자동배정, 재오픈, priority 엔드포인트, related-docs 스코프 |
 | `AuthFlowTest` | 리프레시 회전, 로그아웃 폐기, 5회 실패 잠금, 탭 혼동 |
 | `DeactivationTest` | REQ-E-003/004 비활성화 + 열린 티켓 재배정 + 로그인 차단 + 토큰 폐기, 관리자 가드, SI 계정 생성 |
@@ -227,6 +230,22 @@ TEST_DB_URL=jdbc:postgresql://localhost:5432/smartdesk_test TEST_DB_DRIVER=org.p
 | `ContractStatusJob` | 매일 00:10 UTC + 부팅 시 | 계약 상태 전이 |
 | `AuthMaintenanceJob` | 매일 03:30 UTC | 만료 토큰 정리 |
 | `SseHeartbeatJob` | 25초 | 실시간 알림 SSE keep-alive + 죽은 연결 정리 (0.5-b) |
+| `AnalyticsRefreshJob` | 매일 00:20 UTC | `analytics.ticket_resolution_stats` materialized view 갱신 (단계 1.1) |
+
+## 5.5 데이터 분석 · 티켓 분류 (`analytics/`, 단계 1)
+
+Python 컴포넌트. 상세는 [`analytics/README.md`](analytics/README.md).
+
+```bash
+cd analytics && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+make data && make eda && make stats && make train   # reports/*.md 생성
+make serve                                           # FastAPI :8000  POST /classify
+```
+
+- **1.1 파이프라인**: `V6__analytics.sql` — `analytics` 스키마 뷰/마트. `/api/analytics/*` (관리자) + `/analytics` 화면(운영 분석: 처리시간 p50/p90, 재오픈율, SLA 권장값, 요일×시간 히트맵)
+- **1.2 EDA·검정**: 데이터셋 Tobi-Bueck/customer-support-tickets(HF, CC-BY-NC-4.0). 큐⟂우선순위/유형 카이제곱, Kruskal → `reports/eda.md`, `reports/stats.md`
+- **1.3 분류 모델**: TF-IDF + LinearSVC. macro-F1 규칙 0.18 → **0.49 (+31%p)**. FastAPI 서빙
+- **백엔드 연동**: `smartdesk.classification.provider=ml` 시 `MlCategorySuggester` 가 `/classify` 호출, 실패·저신뢰·매핑없음이면 `RuleBasedCategorySuggester` 로 폴백
 
 ## 6. 배포 / 운영
 
@@ -265,7 +284,9 @@ docker compose --profile app up --build
 - backend: `mvn verify` (DB 는 Testcontainers) + 이미지 빌드
 - frontend: `npm run lint` (eslint + prettier) + `npm run build` + 이미지 빌드
 
-## 7. 확장 이전 남은 작업 (`docs/ROADMAP.md` 참고)
+## 7. 다음 단계 (`docs/ROADMAP.md` 참고)
 
-- 알림 메일/슬랙 어댑터 (현재 인앱 + 로그) · 리치텍스트 에디터 · 문서 tsvector 검색 전환
-- PostgreSQL Row-Level Security 로 테넌시 이중 방어
+- 단계 0.5 (a~h) ✅ · 단계 1 (데이터 분석 · 분류 모델) ✅
+- **단계 2**: pgvector 로 지식문서·종료 티켓 의미 검색 → 유사 티켓/문서 추천, RAG 1차 답변 초안
+- 문서 tsvector → 하이브리드(BM25 + 벡터) 검색 전환
+- PostgreSQL Row-Level Security 로 테넌시 이중 방어, 스토리지 S3 어댑터
